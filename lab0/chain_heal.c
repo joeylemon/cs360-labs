@@ -4,7 +4,7 @@
 #include <string.h>
 
 typedef struct node {
-    char name[100];
+    char *name;
     int x, y;
     int cur_PP, max_PP;
     struct node *prev;
@@ -45,36 +45,32 @@ void DFS(Node *n, Node *from, Global *global, int hop, int total_healing) {
     n->prev = from;
     n->visited = 1;
 
-    // Calculate how much the node can be healed
-    // Using compound interest equation
-    int healing = rint((global->initial_power) * pow(1 - global->power_reduction, hop - 1));
-    if (healing + n->cur_PP > n->max_PP)
-        healing = n->max_PP - n->cur_PP;
+    // Calculate how much the node can be healed using compound interest equation
+    n->healing = rint((global->initial_power) * pow(1 - global->power_reduction, hop - 1));
+    if (n->healing + n->cur_PP > n->max_PP)
+        n->healing = n->max_PP - n->cur_PP;
 
-    n->healing = healing;
-    total_healing += healing;
+    total_healing += n->healing;
 
     // If this path has the largest healing potential, trace the path
     if (total_healing > global->best_healing) {
         global->best_healing = total_healing;
-        global->best_path_length = 0;
+        global->best_path_length = hop;
 
         Node *cur = n;
-        for (int i = 0; i < global->num_jumps && cur != NULL; i++) {
-            global->best_path_length++;
+        for (int i = 0; i < global->num_jumps && cur != NULL; i++, cur = cur->prev) {
             global->best_path[i] = cur;
             global->healing[i] = cur->healing;
-
-            cur = cur->prev;
         }
     }
 
-    // Loop through this node's neighbors
+    // Recursively perform DFS on this node's neighbors
     for (int i = 0; i < n->adj_size; i++) {
-        // Recursively perform DFS on this node
         DFS(n->adj[i], n, global, hop + 1, total_healing);
     }
 
+    // If program reaches this point, we know a path has been exhausted
+    // and we must reset this node
     n->visited = 0;
     n->prev = NULL;
 }
@@ -94,22 +90,27 @@ int main(int argc, char **argv) {
     global.power_reduction = atof(argv[5]);
 
     // Scan input into nodes
+    int x, y, cur_PP, max_PP;
+    char name[100];
     int node_count = 0;
-    Node *node = (Node *)malloc(sizeof(Node));
-    node->prev = NULL;
-    while (scanf("%d %d %d %d %s", &node->x, &node->y, &node->cur_PP, &node->max_PP, node->name) == 5) {
-        Node *prev = node;
-        node = (Node *)malloc(sizeof(Node));
+    Node *prev = NULL;
+    while (scanf("%d %d %d %d %s", &x, &y, &cur_PP, &max_PP, name) == 5) {
+        Node *node = (Node *)malloc(sizeof(Node));
         node->prev = prev;
+        node->name = strdup(name);
+        node->x = x;
+        node->y = y;
+        node->cur_PP = cur_PP;
+        node->max_PP = max_PP;
 
+        prev = node;
         node_count++;
     }
 
     // Create the array of nodes by traversing prev pointers
     Node *nodes[node_count];
-    for (int i = 0; i < node_count; i++) {
-        node = node->prev;
-        nodes[i] = node;
+    for (int i = 0; i < node_count; i++, prev = prev->prev) {
+        nodes[i] = prev;
     }
 
     // Keep a reference to Urgosa since he starts the chain heal
@@ -153,11 +154,11 @@ int main(int argc, char **argv) {
         if (strcmp(n->name, "Urgosa_the_Healing_Shaman") == 0) urgosa = n;
     }
 
-    // Allocate path tracking
+    // Allocate path tracking variables
     global.best_healing = 0;
     global.best_path_length = 0;
-    global.best_path = (Node **)malloc(sizeof(Node *) * global.num_jumps);
-    global.healing = (int *)malloc(sizeof(int *) * global.num_jumps);
+    global.best_path = (Node **)malloc(sizeof(Node *) * global.num_jumps);  // Array of node pointers
+    global.healing = (int *)malloc(sizeof(int *) * global.num_jumps);       // Array of integers
 
     // Find nodes within initial_range of Urgosa
     for (int i = 0; i < node_count; i++) {
@@ -174,10 +175,10 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Output the healing path and amounts
     for (int i = global.best_path_length - 1; i >= 0; i--) {
         printf("%s %d\n", global.best_path[i]->name, global.healing[i]);
     }
-
     printf("Total_Healing %d\n", global.best_healing);
 
     // Free all memory that has been allocated
