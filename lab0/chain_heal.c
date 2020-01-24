@@ -19,7 +19,7 @@ typedef struct node {
 typedef struct global {
     // Command-line arguments
     int initial_range, jump_range, num_jumps, initial_power;
-    float power_reduction;
+    double power_reduction;
 
     // Path-finding information
     int best_healing;
@@ -193,4 +193,6 @@ int main(int argc, char **argv) {
 
     free(global.best_path);
     free(global.healing);
+
+    return 0;
 }
