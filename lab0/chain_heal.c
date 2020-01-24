@@ -52,20 +52,21 @@ void DFS(Node *n, Node *from, Global *global, int hop, int total_healing) {
 
     total_healing += n->healing;
 
+    int i;
     // If this path has the largest healing potential, trace the path
     if (total_healing > global->best_healing) {
         global->best_healing = total_healing;
         global->best_path_length = hop;
 
         Node *cur = n;
-        for (int i = 0; i < global->num_jumps && cur != NULL; i++, cur = cur->prev) {
+        for (i = 0; i < global->num_jumps && cur != NULL; i++, cur = cur->prev) {
             global->best_path[i] = cur;
             global->healing[i] = cur->healing;
         }
     }
 
     // Recursively perform DFS on this node's neighbors
-    for (int i = 0; i < n->adj_size; i++) {
+    for (i = 0; i < n->adj_size; i++) {
         DFS(n->adj[i], n, global, hop + 1, total_healing);
     }
 
@@ -107,9 +108,11 @@ int main(int argc, char **argv) {
         node_count++;
     }
 
+    int i, j;
+
     // Create the array of nodes by traversing prev pointers
     Node *nodes[node_count];
-    for (int i = 0; i < node_count; i++, prev = prev->prev) {
+    for (i = 0; i < node_count; i++, prev = prev->prev) {
         nodes[i] = prev;
     }
 
@@ -118,12 +121,12 @@ int main(int argc, char **argv) {
     Node *urgosa;
 
     // Loop through all nodes and create their adjacency lists
-    for (int i = 0; i < node_count; i++) {
+    for (i = 0; i < node_count; i++) {
         Node *n = nodes[i];
         n->adj_size = 0;
 
         // Calculate size of adjacency list
-        for (int j = 0; j < node_count; j++) {
+        for (j = 0; j < node_count; j++) {
             // A node cannot be adjacent to itself
             if (i == j) continue;
 
@@ -140,7 +143,7 @@ int main(int argc, char **argv) {
         int x = 0;
 
         // Populate adjacency list
-        for (int j = 0; j < node_count; j++) {
+        for (j = 0; j < node_count; j++) {
             // A node cannot be adjacent to itself
             if (i == j) continue;
 
@@ -161,9 +164,9 @@ int main(int argc, char **argv) {
     global.healing = (int *)malloc(sizeof(int *) * global.num_jumps);       // Array of integers
 
     // Find nodes within initial_range of Urgosa
-    for (int i = 0; i < node_count; i++) {
+    for (i = 0; i < node_count; i++) {
         // Set all nodes to unvisited
-        for (int j = 0; j < node_count; j++) {
+        for (j = 0; j < node_count; j++) {
             nodes[j]->visited = 0;
             nodes[j]->healing = 0;
             nodes[j]->prev = NULL;
@@ -176,14 +179,15 @@ int main(int argc, char **argv) {
     }
 
     // Output the healing path and amounts
-    for (int i = global.best_path_length - 1; i >= 0; i--) {
+    for (i = global.best_path_length - 1; i >= 0; i--) {
         printf("%s %d\n", global.best_path[i]->name, global.healing[i]);
     }
     printf("Total_Healing %d\n", global.best_healing);
 
     // Free all memory that has been allocated
-    for (int i = 0; i < node_count; i++) {
+    for (i = 0; i < node_count; i++) {
         free(nodes[i]->adj);
+        free(nodes[i]->name);  // name must be freed since it used strdup()
         free(nodes[i]);
     }
 
