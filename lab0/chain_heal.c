@@ -1,3 +1,10 @@
+// Lab 0 -- Chain Heal
+// COSC360
+// This program determines the optimal healing path for Urgosa
+// given a list of people (using DFS)
+// Joey Lemon
+// 2019-01-26
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
