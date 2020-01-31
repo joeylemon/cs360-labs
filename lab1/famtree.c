@@ -9,17 +9,79 @@ typedef struct {
     char sex;
     char *father;
     char *mother;
-
     Dllist children;
+
+    // 0=unvisited
+    // 1=visited, no error
+    // 2=visited, error
+    int visited;
+
+    // 0=not printed
+    // 1=printed
+    int printed;
 } Person;
 
-Person* find_person(JRB tree, char* name) {
-    JRB node = jrb_find_str(tree, name);
-    if (node == NULL) return NULL;
-    return (Person *)node->val.v;
+// person_print_info(): prints information about the person
+void person_print_info(Person* p) {
+    printf("%s\n", p->name);
+
+    if (p->sex == 'M')  printf("  Sex: Male\n");
+    else                printf("  Sex: Female\n");
+
+    if (p->father)      printf("  Father: %s\n", p->father);
+    else                printf("  Father: Unknown\n");
+
+    if (p->mother)      printf("  Mother: %s\n", p->mother);
+    else                printf("  Mother: Unknown\n");
+
+    if (dll_empty(p->children)) {
+        printf("  Children: None\n");
+    } else {
+        printf("  Children:\n");
+
+        Dllist dtmp;
+        dll_traverse(dtmp, p->children) {
+            Person *child = (Person *)dtmp->val.v;
+            printf("    %s\n", child->name);
+        }
+    }
+
+    printf("\n");
 }
 
-unsigned char person_has_child(Person* p, char *child_name) {
+// person_is_own_descendant(): checks if a person is listed as their own descendent
+// Return values:
+//   1 => when the person is listed as a descendent of themself
+//   0 => all other cases
+int person_is_own_descendant(Person* p) {
+    // If p is visited and none of it's children contain
+    // p, return false
+    if (p->visited == 1) return 0;
+
+    // If p is visited while searching in it's own children
+    // list, return true
+    if (p->visited == 2) return 1;
+
+    p->visited = 2;
+
+    // Loop through all of p's children, recursively checking
+    // for cycled descendants
+    Dllist dtmp;
+    dll_traverse(dtmp, p->children) {
+        Person *child = (Person *)dtmp->val.v;
+        if (person_is_own_descendant(child)) return 1;
+    }
+    
+    p->visited = 1;
+
+    return 0;
+}
+
+// person_has_child(): checks if a person has the given child
+// Return values:
+//   1 => when the person has the given child in their children list
+//   0 => all other cases
+int person_has_child(Person* p, char *child_name) {
     Dllist dtmp;
     dll_traverse(dtmp, p->children) {
         Person *child = (Person *)dtmp->val.v;
@@ -29,6 +91,81 @@ unsigned char person_has_child(Person* p, char *child_name) {
     return 0;
 }
 
+// person_set_sex(): sets the person's sex to the new value
+// Return values:
+//   1 => when the new sex doesn't match the existing sex
+//   0 => all other cases
+int person_set_sex(Person* p, char sex) {
+    if (p->sex && p->sex != sex)
+        return 1;
+
+    p->sex = sex;
+    return 0;
+}
+
+// person_set_parent(): sets the person's parent
+// Return values:
+//   2 => when the parent's sex doesn't match the parent type
+//   1 => when the person already has a different parent listed
+//   0 => all other cases
+int person_set_parent(Person* child, Person* parent, int father) {
+    if (parent->sex != (father ? 'M' : 'F')) {
+        return 2;
+    }
+
+    if (father) {
+        if (child->father == NULL) {
+            child->father = strdup(parent->name);
+            return 0;
+        } else if(strcmp(child->father, parent->name) != 0) {
+            // If the child already has a father with a different name,
+            // return an error
+            return 1;
+        }
+        return 0;
+    } else {
+        if (child->mother == NULL) {
+            child->mother = strdup(parent->name);
+            return 0;
+        } else if(strcmp(child->mother, parent->name) != 0) {
+            // If the child already has a mother with a different name,
+            // return an error
+            return 1;
+        }
+        return 0;
+    }
+}
+
+// person_add_child(): adds the child to the parent's list of children
+void person_add_child(Person* parent, Person* child) {
+    if (!person_has_child(parent, child->name))
+        dll_append(parent->children, new_jval_v((void *)child));
+}
+
+// find_person(): finds the person by name in the tree
+// Return value:
+//   a pointer to the person in the tree
+Person* find_person(JRB tree, char* name) {
+    JRB node = jrb_find_str(tree, name);
+    if (node == NULL) return NULL;
+    return (Person *)node->val.v;
+}
+
+// insert_person(): allocates and adds a new person to the tree with the given name
+// Return value:
+//   a pointer to the newly-added person
+Person* insert_person(JRB tree, char* name) {
+    Person *p = malloc(sizeof(Person));
+    p->name = strdup(name);
+    p->children = new_dllist();
+    jrb_insert_str(tree, p->name, new_jval_v((void *)p));
+
+    return p;
+}
+
+// get_line_value(): creates a string of all fields in the input struct
+// Return value:
+//   a string with all fields joined by spaces
 char* get_line_value(IS is) {
     int nsize, i;
     char *value;
@@ -61,7 +198,7 @@ int main() {
     int nsize, i;
 
     // TODO: change this to new_inputstruct(NULL) for stdin
-    is = new_inputstruct("fam2");
+    is = new_inputstruct("fam5");
     t = make_jrb();
 
     while (get_line(is) >= 0) {
@@ -74,66 +211,58 @@ int main() {
         if (strcmp(is->fields[0], "PERSON") == 0) {
             p = find_person(t, value);
 
-            // Don't create a new person if they already exist
-            if (p == NULL) {
-                p = malloc(sizeof(Person));
-                p->name = strdup(value);
-                p->children = new_dllist();
-                jrb_insert_str(t, p->name, new_jval_v((void *)p));
-            }
+            // Create the person if they don't exist
+            if (p == NULL) p = insert_person(t, value);
         } else if (strcmp(is->fields[0], "FATHER_OF") == 0 || strcmp(is->fields[0], "MOTHER_OF") == 0) {
             Person *child = find_person(t, value);
-            unsigned char father = strcmp(is->fields[0], "FATHER_OF") == 0 ? 1 : 0;
+            int father = strcmp(is->fields[0], "FATHER_OF") == 0 ? 1 : 0;
 
             // Set the parent's sex
-            p->sex = father ? 'M' : 'F';
-
-            // If the child doesn't exist, create it and set the values
-            if (child == NULL) {
-                child = malloc(sizeof(Person));
-                child->name = strdup(value);
-                child->children = new_dllist();
-
-                if (father) child->father = strdup(p->name);
-                else child->mother = strdup(p->name);
-
-                jrb_insert_str(t, child->name, new_jval_v((void *)child));
-
-            // If the child already exists, update parent value
-            } else {
-                if (father) {
-                    // If the child already has a father, don't do anything
-                    if (child->father == NULL) child->father = strdup(p->name);
-                } else {
-                    // If the child already has a mother, don't do anything
-                    if (child->mother == NULL) child->mother = strdup(p->name);
-                }
+            if (person_set_sex(p, father ? 'M' : 'F') == 1) {
+                printf("Bad input - sex mismatch on line %d\n", is->line);
+                exit(1);
             }
 
-            if (!person_has_child(p, child->name))
-                dll_append(p->children, new_jval_v((void *)child));
+            // Create the person if they don't exist
+            if (child == NULL) 
+                child = insert_person(t, value);
+
+            int set_parent_error = person_set_parent(child, p, father);
+            if (set_parent_error == 1) {
+                printf("Bad input -- child with two %s on line %d\n", father ? "fathers" : "mothers", is->line);
+                exit(1);
+            } else if (set_parent_error == 2) {
+                printf("Bad input - sex mismatch on line %d\n", is->line);
+                exit(1);
+            }
+
+            person_add_child(p, child);
 
         } else if (strcmp(is->fields[0], "FATHER") == 0 || strcmp(is->fields[0], "MOTHER") == 0) {
-            unsigned char father = strcmp(is->fields[0], "FATHER") == 0 ? 1 : 0;
+            int father = strcmp(is->fields[0], "FATHER") == 0 ? 1 : 0;
 
             Person *parent = find_person(t, value);
 
-            // Don't create a new person if they already exist
-            if (parent == NULL) {
-                parent = malloc(sizeof(Person));
+            // Create the person if they don't exist
+            if (parent == NULL)
+                parent = insert_person(t, value);
 
-                parent->name = strdup(value);
-                parent->sex = father ? 'M' : 'F';
-                parent->children = new_dllist();
-                dll_append(parent->children, new_jval_v((void *)p));
-
-                jrb_insert_str(t, parent->name, new_jval_v((void *)parent));
-            } else {
-                parent->sex = father ? 'M' : 'F';
-
-                if (!person_has_child(parent, p->name))
-                    dll_append(parent->children, new_jval_v((void *)p));
+            // Set the parent's sex
+            if (person_set_sex(parent, father ? 'M' : 'F') == 1) {
+                printf("Bad input - sex mismatch on line %d\n", is->line);
+                exit(1);
             }
+            
+            int set_parent_error = person_set_parent(p, parent, father);
+            if (set_parent_error == 1) {
+                printf("Bad input -- child with two %s on line %d\n", father ? "fathers" : "mothers", is->line);
+                exit(1);
+            } else if (set_parent_error == 2) {
+                printf("Bad input - sex mismatch on line %d\n", is->line);
+                exit(1);
+            }
+
+            person_add_child(parent, p);
         } else if (strcmp(is->fields[0], "SEX") == 0) {
             if (!p->sex) p->sex = is->fields[1][0];
         }
@@ -142,6 +271,47 @@ int main() {
         free(value);
     }
 
+    // Check for a cycle
+    jrb_traverse(tmp, t) {
+
+        // Set all people to unvisited
+        JRB tmp1;
+        jrb_traverse(tmp1, t) {
+            Person *p1 = (Person *)tmp->val.v;
+            p1->visited = 0;
+        }
+
+        // Check if the current person has a cycle of descendents
+        p = (Person *)tmp->val.v;
+        if (person_is_own_descendant(p)) {
+            printf("Bad input -- cycle in specification\n");
+            exit(1);
+        }
+    }
+
+    /* assume that there is an integer field called "printed" 
+   in the Person struct, and that this field is initialized 
+   to zero for all people */
+ 
+    // while toprint is not empty
+    //   take p off the head of toprint
+    //   if p has not been printed, then 
+    //     if p doesn't have parents, or if p's parents have been printed then
+    //       print p
+    //       for all of p's children, put the child at the end of toprint
+    //     end if
+    //   end if
+    // end while
+
+    Dllist toprint;
+    while (!dll_empty(toprint)) {
+        p = (Person *)toprint->val.v;
+        if (!p->printed) {
+            
+        }
+    }
+
+    // Print out all information
     jrb_traverse(tmp, t) {
         p = (Person *)tmp->val.v;
         printf("%s\n", p->name);
