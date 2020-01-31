@@ -1,4 +1,4 @@
-CLASSDIR = /home/plank/cs360
+CLASSDIR = /home/jplank/cs360
 INCLUDE = -I$(CLASSDIR)/include
 LIBS = $(CLASSDIR)/objs/libfdr.a
 CC = gcc
