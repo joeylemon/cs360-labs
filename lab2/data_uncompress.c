@@ -54,6 +54,8 @@ void read_next_doubles(double *doublebuf, int n);
  */
 void read_next_string(char *charbuf, int s_size);
 
+
+
 int main() {
     int c, last_c, i, n, s_size;
     last_c = 0;
@@ -64,47 +66,53 @@ int main() {
 
     while (1) {
         /* Get the next character that represents what type of data to read
-           s=string, n=newline, i=integers, d=doubles */
+           's'=string, 'n'=newline, 'i'=integers, 'd'=doubles */
         c = getchar();
 
         /* If we've reached the end of the file, we've finished the process */
-        if (c == EOF) exit(0);
+        if (c == EOF) 
+            exit(0);
+
+        /* If we're reading a data type, the next char represents how many data
+           elements need to be read */
+        if (c == 's' || c == 'i' || c == 'd')
+            n = get_next_n();
 
         /* Read a string */
         if (c == 's') {
-            n = get_next_n();
-
             /* Get the next n strings */
             for (i = 0; i <= n; i++) {
                 s_size = get_next_size();
 
                 read_next_string(charbuf, s_size);
 
-                if (i != 0 || (last_c != 'n' && last_c != 0)) printf(" ");
+                if (i != 0 || (last_c != 'n' && last_c != 0))
+                    printf(" ");
+                    
                 printf("%s", charbuf);
             }
 
         /* Read the next integers */
         } else if (c == 'i') {
-            n = get_next_n();
-
             read_next_ints(intbuf, n);
 
             /* Print the n ints read */
             for (i = 0; i <= n; i++) {
-                if (i != 0 || (last_c != 'n' && last_c != 0)) printf(" ");
+                if (i != 0 || (last_c != 'n' && last_c != 0))
+                    printf(" ");
+
                 printf("%d", intbuf[i]);
             }
 
         /* Read the next doubles */
         } else if (c == 'd') {
-            n = get_next_n();
-
             read_next_doubles(doublebuf, n);
 
             /* Print the n doubles read */
             for (i = 0; i <= n; i++) {
-                if (i != 0 || (last_c != 'n' && last_c != 0)) printf(" ");
+                if (i != 0 || (last_c != 'n' && last_c != 0))
+                    printf(" ");
+
                 printf("%.10lg", doublebuf[i]);
             }
 
@@ -113,7 +121,7 @@ int main() {
             printf("\n");
 
         /* If we've reached this point, there's a type of data
-           that isn't in {s, i, d, n}, which is invalid */
+           that isn't in {'s', 'i', 'd', 'n'}, which is invalid */
         } else {
             fprintf(stderr, "Input error: bad type\n");
             exit(1);
@@ -123,6 +131,8 @@ int main() {
         last_c = c;
     }
 }
+
+
 
 int get_next_n() {
     int c = getchar();
