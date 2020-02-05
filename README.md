@@ -1,5 +1,3 @@
-bs
-
 CS360 (Spring '20) with Micah Beck (substituting for Jim Plank) at the University of Tennessee
 
 <h3>The Labs</h3>
