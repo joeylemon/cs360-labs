@@ -1,3 +1,13 @@
+/**
+ * Lab 4 -- Fakemake
+ * COSC360
+ * Joey Lemon
+ * Feb 16, 2020
+ * 
+ * This program uses a descriptor file to build a program,
+ * similar to a makefile
+ */
+
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -117,14 +127,14 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    // Default input file to "fmakefile", then see if user specified a different file
+    /* Default input file to "fmakefile", then see if user specified a different file */
     char* inputfile = "fmakefile";
     if (argc == 2)
         inputfile = argv[1];
 
     IS is = new_inputstruct(inputfile);
 
-    // If file does not exist, 'is' will be null
+    /* If file does not exist, 'is' will be null */
     if (is == NULL) {
         fprintf(stderr, "fakemake: %s: No such file or directory\n", inputfile);
         exit(1);
@@ -139,13 +149,13 @@ int main(int argc, char **argv) {
     Dllist flags = new_dllist();
 
     while (get_line(is) >= 0) {
-        // Skip useless lines
+        /* Skip useless lines */
         if (is->NF <= 1) continue;
 
-        // The keyword is the first word in the line
+        /* The keyword is the first word in the line */
         char *keyword = is->fields[0];
 
-        // C source files
+        /* C source files */
         if (equal(keyword, "C")) {
             for (i = 1; i < is->NF; i++) {
                 if (insert_c_file(Cfiles, is->fields[i]) == NULL) {
@@ -154,7 +164,7 @@ int main(int argc, char **argv) {
                 }
             }
 
-        // C header files
+        /* C header files */
         } else if (equal(keyword, "H")) {
             for (i = 1; i < is->NF; i++)
                 if (insert_file(Hfiles, is->fields[i]) == NULL) {
@@ -162,7 +172,7 @@ int main(int argc, char **argv) {
                     exit(1);
                 }
 
-        // Name of executable
+        /* Name of executable */
         } else if (equal(keyword, "E")) {
             if (executable != NULL) {
                 fprintf(stderr, "fmakefile (%d) cannot have more than one E line\n", is->line);
@@ -172,19 +182,19 @@ int main(int argc, char **argv) {
 
             executable = strdup(is->fields[1]);
 
-        // Compilation flags
+        /* Compilation flags */
         } else if (equal(keyword, "F")) {
             for (i = 1; i < is->NF; i++)
                 dll_append(flags, new_jval_s(strdup(is->fields[i])));
 
-        // Link files
+        /* Link files */
         } else if (equal(keyword, "L")) {
             for (i = 1; i < is->NF; i++)
                 dll_append(Lfiles, new_jval_s(strdup(is->fields[i])));
         }
     }
 
-    // Make sure the executable was listed in the makefile
+    /* Make sure the executable was listed in the makefile */
     if (executable == NULL) {
         fprintf(stderr, "No executable specified\n");
         free_memory();
@@ -194,7 +204,7 @@ int main(int argc, char **argv) {
     Dllist tmp;
     MFile *m;
 
-    // Traverse the header files for the most recent one
+    /* Traverse the header files for the most recent one */
     int last_header_change = 0;
     dll_traverse(tmp, Hfiles) {
         m = (MFile *)tmp->val.v;
@@ -206,11 +216,11 @@ int main(int argc, char **argv) {
     struct stat statbuf;
     int executable_exists = stat(executable, &statbuf) != -1;
 
-    // If no files were compiled, num_compiled will be the time of the last .o modification
+    /* If no files were compiled, num_compiled will be the time of the last .o modification */
     int num_compiled = compile_object_code(Cfiles, flags, last_header_change);
 
-    // Compile executable if any .c files were compiled, or if the executable 
-    // doesn't exist, or if there's a newer .o file
+    /* Compile executable if any .c files were compiled, or if the executable
+        doesn't exist, or if there's a newer .o file */
     if ( (num_compiled > 0 && num_compiled < 1000000) || !executable_exists || statbuf.st_mtime < num_compiled) {
         compile_executable(Cfiles, Lfiles, flags, executable);
     } else {
@@ -230,7 +240,7 @@ int equal(char* str1, char* str2) {
 }
 
 MFile* insert_file(Dllist list, char* fileName) {
-    // Allocate a new MFile
+    /* Allocate a new MFile */
     MFile *file = (MFile *) malloc(sizeof(MFile));
     file->name = strdup(fileName);
     file->objectFile = NULL;
@@ -247,20 +257,20 @@ MFile* insert_file(Dllist list, char* fileName) {
 }
 
 MFile* mfile_add_object_file(MFile* mfile) {
-    // Remove the .c extension from the name
+    /* Remove the .c extension from the name */
     char* fileName = strdup(mfile->name);
     char* baseName = strtok(fileName, ".");
 
-    // Build a new name with a .o extension
+    /* Build a new name with a .o extension */
     char ofileName[strlen(baseName) + 2];
     strcpy(ofileName, baseName);
     strcat(ofileName, ".o");
 
-    // We had to strdup fileName since strtok modifies the pointer, so we have to
-    // to free fileName manually
+    /* We had to strdup fileName since strtok modifies the pointer, so we have to
+        to free fileName manually */
     free(fileName);
 
-    // Update the object file pointer in the mfile if the .o file exists
+    /* Update the object file pointer in the mfile if the .o file exists */
     struct stat statbuf;
     if (stat(ofileName, &statbuf) != -1) {
         MFile *file = (MFile *) malloc(sizeof(MFile));
@@ -278,7 +288,7 @@ MFile* insert_c_file(Dllist Cfiles, char* fileName) {
     MFile* cfile = insert_file(Cfiles, fileName);
     if (cfile == NULL) return NULL;
 
-    // All .c files need a corresponding .o file
+    /* All .c files need a corresponding .o file */
     mfile_add_object_file(cfile);
 
     return cfile;
@@ -288,13 +298,13 @@ void free_file_list(Dllist list) {
     Dllist tmp;
     MFile *m;
 
-    // Traverse all elements and free their specific fields that were
-    // allocated using malloc
+    /* Traverse all elements and free their specific fields that were
+            allocated using malloc */
     dll_traverse(tmp, list) {
         m = (MFile *)tmp->val.v;
 
-        // Don't forget to free the .o file here, since there isn't a
-        // separate list of .o files
+        /* Don't forget to free the .o file here, since there isn't a
+            separate list of .o files */
         if (m->objectFile != NULL) {
             free(m->objectFile->name);
             free(m->objectFile);
@@ -318,20 +328,20 @@ int gcc(char* compileType, Dllist flags, char* args) {
     char command[100];
     Dllist tmp;
 
-    // Allocate a new string to hold our flags
+    /* Allocate a new string to hold our flags */
     char* flagList = (char*) malloc(sizeof(char) * 100);
     flagList[0] = '\0';
 
-    // Concatenate all flags into one string
+    /* Concatenate all flags into one string */
     dll_traverse(tmp, flags) {
         strcat(flagList, tmp->val.s);
         strcat(flagList, " ");
     }
 
-    // Format the string using our arguments
+    /* Format the string using our arguments */
     sprintf(command, "gcc %s %s%s\n", compileType, flagList, args);
 
-    // Perform the command and print it to stdout
+    /* Perform the command and print it to stdout */
     int result = system(command);
     printf(command);
 
@@ -347,18 +357,18 @@ int compile_object_code(Dllist Cfiles, Dllist flags, int header_time) {
     Dllist tmp;
     MFile *m;
 
-    // Compile all .c files that require a new .o file
+    /* Compile all .c files that require a new .o file */
     dll_traverse(tmp, Cfiles) {
         m = (MFile *)tmp->val.v;
 
-        // If the file doesn't exist, it won't have a modified time
+        /* If the file doesn't exist, it won't have a modified time */
         if (m->time == 0) {
             fprintf(stderr, "fmakefile: %s: No such file or directory\n", m->name);
             exit(1);
         }
 
-        // If the .o doesn't exist, or it has been modified, or if any .h files have been modified,
-        // the recompile the .c file
+        /* If the .o doesn't exist, or it has been modified, or if any .h files have been modified,
+            then recompile the .c file */
         if (m->objectFile == NULL 
             || m->objectFile->time < m->time 
             || m->objectFile->time < header_time) {
@@ -369,19 +379,19 @@ int compile_object_code(Dllist Cfiles, Dllist flags, int header_time) {
                 exit(1);
             }
 
-            // Update the pointer to the object file if a new one was created
+            /* Update the pointer to the object file if a new one was created */
             if (m->objectFile == NULL)
                 mfile_add_object_file(m);
 
             num_compiled++;
         }
 
-        // Keep track of the time of the latest .o modification
+        /* Keep track of the time of the latest .o modification */
         if (m->objectFile->time > last_object_change)
             last_object_change = m->objectFile->time;
     }
 
-    // If no files were compiled, return the time of the last .o modification
+    /* If no files were compiled, return the time of the last .o modification */
     if (num_compiled == 0)
         return last_object_change;
     
@@ -392,29 +402,29 @@ void compile_executable(Dllist Cfiles, Dllist Lfiles, Dllist flags, char* execut
     Dllist tmp;
     MFile *m;
     
-    // Build a string for gcc's output file name
+    /* Build a string for gcc's output file name */
     char* compileType = (char*) malloc(sizeof(char) * (strlen(executable) + 4));
     strcpy(compileType, "-o ");
     strcat(compileType, executable);
 
-    // Build a list of arguments for gcc
+    /* Build a list of arguments for gcc */
     char* argList = (char*) malloc(sizeof(char) * 200);
     argList[0] = '\0';
 
-    // Concatenate all .o file names to the list of arguments
+    /* Concatenate all .o file names to the list of arguments */
     dll_traverse(tmp, Cfiles) {
         m = (MFile *)tmp->val.v;
         strcat(argList, m->objectFile->name);
         strcat(argList, " ");
     }
 
-    // Concatenate all library file names to the list of arguments
+    /* Concatenate all library file names to the list of arguments */
     dll_traverse(tmp, Lfiles) {
         strcat(argList, tmp->val.s);
         strcat(argList, " ");
     }
 
-    // Remove the extra space at the end of the arguments list
+    /* Remove the extra space at the end of the arguments list */
     argList[strlen(argList) - 1] = '\0';
 
     int result = gcc(compileType, flags, argList);
