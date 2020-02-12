@@ -8,10 +8,12 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/lab2/data_uncompress",
-            "args": [],
+            "program": "${workspaceFolder}/lab4/fakemake",
+            "args": [
+                "f.fm"
+            ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/lab2",
+            "cwd": "${workspaceFolder}/lab4",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
