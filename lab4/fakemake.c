@@ -106,9 +106,10 @@ int gcc(char* compileType, Dllist flags, char* args);
  * @param flags The list of flag strings
  * @param header_time The most recent modify time for any .h file
  * @return int The number of files that were compiled. If no files were compiled, 
- *              it returns the time of the last .o modification
+ *              it returns a bool if time of the last .o modification is greater
+ *              than the age of the executable. If the compilation failed, it returns -1
  */
-int compile_object_code(Dllist Cfiles, Dllist flags, int header_time);
+int compile_object_code(Dllist Cfiles, Dllist flags, int header_time, int executable_time);
 
 /**
  * Compile the executable file using gcc
@@ -117,8 +118,9 @@ int compile_object_code(Dllist Cfiles, Dllist flags, int header_time);
  * @param Lfiles The list of library file strings
  * @param flags The list of flag strings
  * @param executable The name of the executable
+ * @return int 1 if the compilation failed, 0 if not
  */
-void compile_executable(Dllist Cfiles, Dllist Lfiles, Dllist flags, char* executable);
+int compile_executable(Dllist Cfiles, Dllist Lfiles, Dllist flags, char* executable);
 
 
 int main(int argc, char **argv) {
@@ -215,15 +217,32 @@ int main(int argc, char **argv) {
 
     struct stat statbuf;
     int executable_exists = stat(executable, &statbuf) != -1;
+    int executable_time = 0;
+    if (executable_exists)
+        executable_time = statbuf.st_mtime;
 
-    /* If no files were compiled, num_compiled will be the time of the last .o modification */
-    int num_compiled = compile_object_code(Cfiles, flags, last_header_change);
+    /* If no files were compiled, num_compiled will check if time of the last .o modification
+        is greater than the executable age (true or false) */
+    int num_compiled = compile_object_code(Cfiles, flags, last_header_change, executable_time);
 
-    /* Compile executable if any .c files were compiled, or if the executable
-        doesn't exist, or if there's a newer .o file */
-    if ( (num_compiled > 0 && num_compiled < 1000000) || !executable_exists || statbuf.st_mtime < num_compiled) {
-        compile_executable(Cfiles, Lfiles, flags, executable);
+    /* If the compilation failed, exit */
+    if (num_compiled == -1) {
+        fprintf(stderr, "Command failed.  Exiting\n");
+        free_memory();
+        exit(1);
+    }
+
+    /* Compile executable if any .c files were compiled or if the executable is newer,
+        or if the executable doesn't exist, or if there's a newer .o file */
+    if ( num_compiled > 0 || !executable_exists || statbuf.st_mtime < num_compiled) {
+        /* Since we compiled new object code, we must recompile the executable */
+        if (compile_executable(Cfiles, Lfiles, flags, executable) != 0) {
+            fprintf(stderr, "Command failed.  Fakemake exiting\n");
+            free_memory();
+            exit(1);
+        }
     } else {
+        /* Since nothing has changed with the source, there's nothing to be done */
         printf("%s up to date\n", executable);
 
         free_memory();
@@ -350,7 +369,7 @@ int gcc(char* compileType, Dllist flags, char* args) {
     return result;
 }
 
-int compile_object_code(Dllist Cfiles, Dllist flags, int header_time) {
+int compile_object_code(Dllist Cfiles, Dllist flags, int header_time, int executable_time) {
     int last_object_change = 0;
     int num_compiled = 0;
 
@@ -375,8 +394,7 @@ int compile_object_code(Dllist Cfiles, Dllist flags, int header_time) {
 
             int result = gcc("-c", flags, m->name);
             if (result != 0) {
-                fprintf(stderr, "Command failed.  Exiting\n");
-                exit(1);
+                return -1;
             }
 
             /* Update the pointer to the object file if a new one was created */
@@ -391,14 +409,16 @@ int compile_object_code(Dllist Cfiles, Dllist flags, int header_time) {
             last_object_change = m->objectFile->time;
     }
 
-    /* If no files were compiled, return the time of the last .o modification */
-    if (num_compiled == 0)
-        return last_object_change;
+    /* If no files were compiled, check if the time of the last .o modification is greater
+        than the executable age */
+    if (num_compiled == 0) {
+        return last_object_change > executable_time;
+    }
     
     return num_compiled;
 }
 
-void compile_executable(Dllist Cfiles, Dllist Lfiles, Dllist flags, char* executable) {
+int compile_executable(Dllist Cfiles, Dllist Lfiles, Dllist flags, char* executable) {
     Dllist tmp;
     MFile *m;
     
@@ -428,11 +448,13 @@ void compile_executable(Dllist Cfiles, Dllist Lfiles, Dllist flags, char* execut
     argList[strlen(argList) - 1] = '\0';
 
     int result = gcc(compileType, flags, argList);
-    if (result != 0) {
-        fprintf(stderr, "Command failed.  Fakemake exiting\n");
-        exit(1);
-    }
 
     free(compileType);
     free(argList);
+
+    if (result != 0) {
+        return 1;
+    }
+
+    return 0;
 }
