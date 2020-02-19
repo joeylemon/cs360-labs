@@ -8,12 +8,12 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/lab4/fakemake",
+            "program": "${workspaceFolder}/lab5/tarc",
             "args": [
-                "f.fm"
+                "../lab5/d1"
             ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/lab4",
+            "cwd": "${workspaceFolder}/lab5",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
