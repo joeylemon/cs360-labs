@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/lab5/tarc",
             "args": [
-                "../lab5/d1"
+                "/home/jplank/cs360/labs/lab5/Gradescript-Examples/050"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/lab5",
