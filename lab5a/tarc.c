@@ -106,16 +106,15 @@ int print_file(char* longname, char* shortname, JRB inodes) {
  * Parse all of the files in the given directory and recursively parse 
  * all subdirectories
  * 
- * @param fullpath The full path to the directory (e.g. "/home/jlemon3/labs/lab5/d1")
- * @param shortpath The shortened path to the directory (e.g. "d1")
+ * @param directory The directory struct with path names
  * @param inodes The tree of inodes
  */
-void iterate_dir(char* fullpath, char* shortpath, JRB inodes) {
+void iterate_dir(Directory* directory, JRB inodes) {
     struct dirent *dp;
-    DIR *dfd = opendir(fullpath);
+    DIR *dfd = opendir(directory->longname);
 
     if (dfd == NULL) {
-        fprintf(stderr, "%s: No such file or directory\n", fullpath);
+        fprintf(stderr, "%s: No such file or directory\n", directory->longname);
         exit(1);
     }
 
@@ -131,8 +130,8 @@ void iterate_dir(char* fullpath, char* shortpath, JRB inodes) {
             continue;
 
         /* Build the file path using the current directory */
-        sprintf(longname, "%s/%s", fullpath, dp->d_name);
-        sprintf(shortname, "%s/%s", shortpath, dp->d_name);
+        sprintf(longname, "%s/%s", directory->longname, dp->d_name);
+        sprintf(shortname, "%s/%s", directory->shortname, dp->d_name);
 
         /* Print the file information to stdout */
         print_file(longname, shortname, inodes);
@@ -144,6 +143,7 @@ void iterate_dir(char* fullpath, char* shortpath, JRB inodes) {
         /* If the file is a directory, add to dir list to iterate */
         if(S_ISDIR(statbuf.st_mode)) {
             Directory *dir = (Directory*) malloc(sizeof(Directory));
+            /* Continuously append directories onto the path */
             strcpy(dir->shortname, shortname);
             strcpy(dir->longname, longname);
             dll_append(dirs, new_jval_v(dir));
@@ -156,7 +156,7 @@ void iterate_dir(char* fullpath, char* shortpath, JRB inodes) {
     Dllist tmp;
     dll_traverse(tmp, dirs){
         Directory* dir = (Directory*) tmp->val.v;
-        iterate_dir(dir->longname, dir->shortname, inodes);
+        iterate_dir(dir, inodes);
 		free(dir);
 	}
 
@@ -179,9 +179,15 @@ int main(int argc, char **argv) {
     if (print_file(argv[1], dir_suffix, inodes) != 0)
         exit(1);
 
-    /* Begin iterating at the given directory, and recursively iterate subdirectories */
-    iterate_dir(argv[1], dir_suffix, inodes);
+    /* Create a struct to represent the given directory */
+    Directory *directory = (Directory*) malloc(sizeof(Directory));
+    strcpy(directory->longname, argv[1]);
+    strcpy(directory->shortname, dir_suffix);
 
+    /* Begin iterating at the given directory, and recursively iterate subdirectories */
+    iterate_dir(directory, inodes);
+
+    free(directory);
     free(dir);
     jrb_free_tree(inodes);
 }
