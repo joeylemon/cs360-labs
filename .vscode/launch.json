@@ -8,12 +8,10 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/lab5/tarc",
-            "args": [
-                "/home/jplank/cs360/labs/lab5/Gradescript-Examples/050"
-            ],
+            "program": "${workspaceFolder}/lab5b/tarx",
+            "args": [],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/lab5",
+            "cwd": "${workspaceFolder}/lab5b",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
