@@ -1,8 +1,8 @@
 /**
- * Lab 5a -- Tarc
+ * Lab 5b -- Tarx
  * COSC360
  * Joey Lemon
- * Feb 23, 2020
+ * Mar 1, 2020
  * 
  * This program builds a directory from a tar file, similar to "tar xf"
  */
@@ -16,6 +16,7 @@
 #include "jrb.h"
 #include "dllist.h"
 
+// A structure to hold information about a file
 typedef struct TFile {
 	int name_length, mode;
     long inode, mtime, size;
@@ -24,13 +25,22 @@ typedef struct TFile {
     unsigned char* contents;
 } TFile;
 
+/**
+ * Reads the next file from the tarc file given via stdin
+ * @param tfile A pointer to a tfile structure
+ * @param inodes A JRB of inodes to keep track of links
+ * @return int 0 if the file was read successfully, -1 if we've reached EOF
+ */
 int read_next_file(TFile *tfile, JRB inodes) {
     // Read name length
     int name_length;
+
+    // If we couldn't read name length, we know we've reached EOF
     if (fread(&name_length, sizeof(int), 1, stdin) != 1) return -1;
+
     tfile->name_length = name_length;
 
-    // Ensure name length is proper
+    // Ensure name length is positive so it can be malloced
     if (name_length <= 0) {
         fprintf(stderr, "Bad tarc file. File name size is %d, which I can't malloc.\n", name_length);
         exit(1);
@@ -42,6 +52,8 @@ int read_next_file(TFile *tfile, JRB inodes) {
         fprintf(stderr, "Bad tarc file.  Couldn't read name\n");
         exit(1);
     }
+
+    // Add null terminator since tarc leaves it out
     filename[name_length] = '\0';
     strcpy(tfile->filename, filename);
 
@@ -91,7 +103,7 @@ int read_next_file(TFile *tfile, JRB inodes) {
     }
     tfile->size = size;
 
-    // Prevent bus error if size is negative/far too large
+    // Prevent bus error if size is negative or really large
     if (size <= 0 || size >= 100000000) {
         fprintf(stderr, "Bad tarc file for %s.  Can't read file of size %ld\n", tfile->filename, size);
         exit(1);
@@ -113,24 +125,26 @@ int main() {
     Dllist files = new_dllist();
     Dllist dirs = new_dllist();
 
-    //stdin = fopen("/home/jplank/cs360/labs/lab5/Gradescript-Examples/049.tarc", "r");
-
-    // Read all files from the tarc file
+    // Read all files from the tarc file and append them to the lists
     TFile *tfile;
     while (1) {
         tfile = (TFile*) malloc(sizeof(TFile));
+
+        // If read_next_file returns -1, we've reached EOF
         if (read_next_file(tfile, inodes) == -1) {
             free(tfile);
             break;
         }
 
+        // Append the file to the correct list depending on if its a directory
         if(S_ISDIR(tfile->mode))
             dll_append(dirs, new_jval_v(tfile));
         else
             dll_append(files, new_jval_v(tfile));
     }
 
-    // Create directories with writable modes
+    // Create all directories with writable modes
+    // Do this before creating files to ensure the directories exist
     Dllist tmp;
     dll_traverse(tmp, dirs){
         TFile* tfile = (TFile*) tmp->val.v;
@@ -162,7 +176,7 @@ int main() {
         utime(tfile->filename, &times);
     }
 
-    // Free file structs
+    // Free file structs since we will no longer need them
     dll_traverse(tmp, files){
         TFile* tfile = (TFile*) tmp->val.v;
         free(tfile->contents);
@@ -170,11 +184,12 @@ int main() {
     }
 
     // Set directory modes properly after writing all files and free dir structs
+    // We set the modes after writing files to ensure we have writing permission
     dll_traverse(tmp, dirs){
         TFile* tfile = (TFile*) tmp->val.v;
         chmod(tfile->filename, tfile->mode);
         
-        // Set the dir modification time
+        // Set the dir modification time since we just edited it with chmod
         struct utimbuf times;
         times.modtime = tfile->mtime;
         times.actime = tfile->mtime;
