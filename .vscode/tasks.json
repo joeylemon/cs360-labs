@@ -1,0 +1,9 @@
+{
+    "version": "2.0.0",
+    "tasks": [{
+        "label": "make",
+        "command": "cd ~/cs360/lab7 && make",
+        "args": [],
+        "type": "shell"
+    }]
+}
