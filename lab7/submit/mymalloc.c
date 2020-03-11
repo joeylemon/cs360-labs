@@ -24,9 +24,7 @@ Flist free_list_head = NULL;
  * 
  * @return void* The pointer to the first Flist element
  */
-void *free_list_begin() {
-    return free_list_head;
-}
+void *free_list_begin() { return free_list_head; }
 
 /**
  * Follow the flink of the given pointer to an Flist element
@@ -34,10 +32,7 @@ void *free_list_begin() {
  * @param node The element to get the successive element of
  * @return void* The pointer to the next Flist element
  */
-void *free_list_next(void *node) {
-    Flist flist = node;
-    return flist->flink;
-}
+void *free_list_next(void *node) { return ((Flist)node)->flink; }
 
 /**
  * Insert the given node into the free list by pushing it to the head
@@ -173,7 +168,4 @@ void *my_malloc(size_t size) {
  * 
  * @param ptr The pointer to the allocated memory
  */
-void my_free(void *ptr) {
-    Flist node = ptr - 8;
-    free_list_insert(node);
-}
+void my_free(void *ptr) { free_list_insert((Flist)(ptr-8)); }
