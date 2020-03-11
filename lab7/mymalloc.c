@@ -51,23 +51,24 @@ void free_list_insert(Flist node) {
         return;
     }
 
-    // Flist l;
-    // for (l = free_list_begin(); l != NULL; l = free_list_next(l)) {
-    //     if (free_list_next(l) == NULL) break;
-    //     if (l->flink == NULL || (l < node && l->flink > node)) {
+    Flist l;
+    for (l = free_list_begin(); l != NULL; l = free_list_next(l)) {
+        if (free_list_next(l) == NULL) break;
 
-    //     }
-    // }
+        if (l < node && l->flink > node) {
+            l->flink->blink = node;
+            node->flink = l->flink;
 
-    // if (free_list_next(l) == NULL) {
-    //     l->flink = node;
-    //     node->blink = l;
-    // }
+            l->flink = node;
+            node->blink = l;
+            return;
+        }
+    }
 
-    // Replace the current head with the new node
-    node->flink = free_list_head;
-    free_list_head->blink = node;
-    free_list_head = node;
+    if (free_list_next(l) == NULL) {
+        l->flink = node;
+        node->blink = l;
+    }
 }
 
 /**
@@ -86,16 +87,38 @@ void free_list_delete(Flist node) {
         node->flink->blink = node->blink;
 }
 
+/**
+ * Combine all adjacent entries in the free list into a single node
+ */
+void coalesce_free_list() {
+    Flist l = free_list_begin();
+    while (l != NULL) {
+        Flist next = l->flink;
+
+        // If the next node is adjacent, combine them
+        if ((void*)l + l->size == next) {
+            l->size += next->size;
+            free_list_delete(next);
+
+            // Don't move to the next node since there could be more
+            // nodes adjacent to the current one
+            continue;
+        }
+
+        l = l->flink;
+    }
+}
+
 void print_free_list() {
-    printf("---------------- Free List ----------------\n");
-    printf("%-10s    %-5s    %-10s    %-10s\n", "address", "size", "flink", "blink");
+    printf("------------------------- Free List -------------------------\n");
+    printf("%-10s    %-5s    %-10s    %-10s    %-10s\n", "address", "size", "flink", "blink", "&p + size");
 
     Flist l;
     for (l = free_list_begin(); l != NULL; l = free_list_next(l)) {
-        printf("0x%08x    %-5d    0x%08x    0x%08x\n", l, l->size, l->flink, l->blink);
+        printf("0x%08x    %-5d    0x%08x    0x%08x    0x%08x\n", l, l->size, l->flink, l->blink, (void*)l + l->size);
     }
 
-    printf("-------------------------------------------\n\n");
+    printf("-------------------------------------------------------------\n\n");
 }
 
 /**
@@ -182,6 +205,38 @@ void my_free(void *ptr) {
 
 //     void *q = my_malloc(12765);
 //     printf("my_malloc(%d)\n", 12765);
+//     print_free_list();
+
+//     my_free(q);
+//     printf("my_free(q)\n");
+//     print_free_list();
+
+//     void *r = my_malloc(6000);
+//     printf("my_malloc(%d)\n", 6000);
+//     print_free_list();
+
+//     void *s = my_malloc(6000);
+//     printf("my_malloc(%d)\n", 6000);
+//     print_free_list();
+
+//     void *t = my_malloc(6000);
+//     printf("my_malloc(%d)\n", 6000);
+//     print_free_list();
+
+//     my_free(t);
+//     printf("my_free(t)\n");
+//     print_free_list();
+
+//     my_free(s);
+//     printf("my_free(s)\n");
+//     print_free_list();
+
+//     my_free(r);
+//     printf("my_free(r)\n");
+//     print_free_list();
+
+//     coalesce_free_list();
+//     printf("coalesce_free_list()\n");
 //     print_free_list();
 // }
 
