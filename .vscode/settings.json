@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "typeinfo": "c",
-        "stat.h": "c"
+        "stat.h": "c",
+        "mymalloc.h": "c",
+        "stdio.h": "c"
     }
 }

@@ -41,6 +41,7 @@ void *free_list_next(void *node) {
 
 /**
  * Insert the given node into the free list by pushing it to the head
+ * Performs an insertion-sort to keep nodes in order
  * 
  * @param node The node to insert into the free list
  */
@@ -51,24 +52,23 @@ void free_list_insert(Flist node) {
         return;
     }
 
+    // Find the next node where the new node should be inserted
     Flist l;
-    for (l = free_list_begin(); l != NULL; l = free_list_next(l)) {
-        if (free_list_next(l) == NULL) break;
+    for (l = free_list_begin(); l->flink != NULL && node > l->flink; l = l->flink);
 
-        if (l < node && l->flink > node) {
-            l->flink->blink = node;
-            node->flink = l->flink;
-
-            l->flink = node;
-            node->blink = l;
-            return;
-        }
-    }
-
-    if (free_list_next(l) == NULL) {
+    // If we reached the end of the list, simply append the new node
+    if (l->flink == NULL) {
         l->flink = node;
         node->blink = l;
+        return;
     }
+
+    // Otherwise, insert the new node in the place of l
+    l->flink->blink = node;
+    node->flink = l->flink;
+
+    l->flink = node;
+    node->blink = l;
 }
 
 /**
@@ -99,13 +99,9 @@ void coalesce_free_list() {
         if ((void*)l + l->size == next) {
             l->size += next->size;
             free_list_delete(next);
-
-            // Don't move to the next node since there could be more
-            // nodes adjacent to the current one
-            continue;
+        } else {
+            l = l->flink;
         }
-
-        l = l->flink;
     }
 }
 
@@ -193,140 +189,3 @@ void my_free(void *ptr) {
     Flist node = ptr - 8;
     free_list_insert(node);
 }
-
-// int main () {
-//     void *p = my_malloc(8923);
-//     printf("my_malloc(%d)\n", 8923);
-//     print_free_list();
-
-//     my_free(p);
-//     printf("my_free(p)\n");
-//     print_free_list();
-
-//     void *q = my_malloc(12765);
-//     printf("my_malloc(%d)\n", 12765);
-//     print_free_list();
-
-//     my_free(q);
-//     printf("my_free(q)\n");
-//     print_free_list();
-
-//     void *r = my_malloc(6000);
-//     printf("my_malloc(%d)\n", 6000);
-//     print_free_list();
-
-//     void *s = my_malloc(6000);
-//     printf("my_malloc(%d)\n", 6000);
-//     print_free_list();
-
-//     void *t = my_malloc(6000);
-//     printf("my_malloc(%d)\n", 6000);
-//     print_free_list();
-
-//     my_free(t);
-//     printf("my_free(t)\n");
-//     print_free_list();
-
-//     my_free(s);
-//     printf("my_free(s)\n");
-//     print_free_list();
-
-//     my_free(r);
-//     printf("my_free(r)\n");
-//     print_free_list();
-
-//     coalesce_free_list();
-//     printf("coalesce_free_list()\n");
-//     print_free_list();
-// }
-
-// int main () {
-//     int *ptrs[28];
-//     int *free_ptrs[14];
-//     int dc[28];
-
-//     free_ptrs[7] = my_malloc(8923);
-//     ptrs[5] = my_malloc(12784); dc[5] = 12792;
-//     ptrs[16] = my_malloc(12777); dc[16] = 12792;
-//     ptrs[15] = my_malloc(12219); dc[15] = 12232;
-//     free_ptrs[8] = my_malloc(8751);
-//     free_ptrs[6] = my_malloc(8262);
-//     free_ptrs[2] = my_malloc(8671);
-//     free_ptrs[9] = my_malloc(8567);
-//     free_ptrs[11] = my_malloc(8591);
-//     ptrs[26] = my_malloc(12043); dc[26] = 12056;
-//     free_ptrs[5] = my_malloc(8389);
-//     free_ptrs[12] = my_malloc(8399);
-//     ptrs[18] = my_malloc(12453); dc[18] = 12464;
-//     free_ptrs[10] = my_malloc(8466);
-//     free_ptrs[4] = my_malloc(8270);
-//     free_ptrs[3] = my_malloc(8498);
-//     free_ptrs[13] = my_malloc(8432);
-//     ptrs[20] = my_malloc(12300); dc[20] = 12312;
-//     free_ptrs[0] = my_malloc(9157);
-//     ptrs[27] = my_malloc(12878); dc[27] = 12888;
-//     ptrs[21] = my_malloc(12318); dc[21] = 12328;
-//     ptrs[8] = my_malloc(12737); dc[8] = 12752;
-//     ptrs[13] = my_malloc(12817); dc[13] = 12832;
-//     free_ptrs[1] = my_malloc(8578);
-//     my_free(free_ptrs[7]);
-//     printf("my_free(free_ptrs[7])\n");
-//     print_free_list();
-//     ptrs[1] = my_malloc(12765); dc[1] = 12776;
-//     ptrs[23] = my_malloc(12751); dc[23] = 12760;
-//     my_free(free_ptrs[0]);
-//     printf("my_free(free_ptrs[0])\n");
-//     print_free_list();
-//     my_free(free_ptrs[5]);
-//     printf("my_free(free_ptrs[5])\n");
-//     print_free_list();
-//     ptrs[22] = my_malloc(12407); dc[22] = 12416;
-//     ptrs[12] = my_malloc(12534); dc[12] = 12544;
-//     ptrs[19] = my_malloc(12960); dc[19] = 12968;
-//     ptrs[24] = my_malloc(12420); dc[24] = 12432;
-//     my_free(free_ptrs[3]);
-//     printf("my_free(free_ptrs[3])\n");
-//     print_free_list();
-//     ptrs[25] = my_malloc(12893); dc[25] = 12904;
-//     ptrs[7] = my_malloc(12890); dc[7] = 12904;
-//     ptrs[9] = my_malloc(12105); dc[9] = 12120;
-//     ptrs[2] = my_malloc(12315); dc[2] = 12328;
-//     my_free(free_ptrs[4]);
-//     printf("my_free(free_ptrs[4])\n");
-//     print_free_list();
-//     my_free(free_ptrs[13]);
-//     printf("my_free(free_ptrs[13])\n");
-//     print_free_list();
-//     my_free(free_ptrs[6]);
-//     printf("my_free(free_ptrs[6])\n");
-//     print_free_list();
-//     my_free(free_ptrs[12]);
-//     printf("my_free(free_ptrs[12])\n");
-//     print_free_list();
-//     my_free(free_ptrs[2]);
-//     printf("my_free(free_ptrs[2])\n");
-//     print_free_list();
-//     ptrs[10] = my_malloc(12138); dc[10] = 12152;
-//     my_free(free_ptrs[10]);
-//     printf("my_free(free_ptrs[10])\n");
-//     print_free_list();
-//     my_free(free_ptrs[8]);
-//     printf("my_free(free_ptrs[8])\n");
-//     print_free_list();
-//     ptrs[0] = my_malloc(12505); dc[0] = 12520;
-//     my_free(free_ptrs[11]);
-//     printf("my_free(free_ptrs[11])\n");
-//     print_free_list();
-//     ptrs[11] = my_malloc(12954); dc[11] = 12968;
-//     my_free(free_ptrs[9]);
-//     printf("my_free(free_ptrs[9])\n");
-//     print_free_list();
-//     ptrs[6] = my_malloc(12164); dc[6] = 12176;
-//     ptrs[17] = my_malloc(12529); dc[17] = 12544;
-//     my_free(free_ptrs[1]);
-//     printf("my_free(free_ptrs[1])\n");
-//     print_free_list();
-//     ptrs[3] = my_malloc(12475); dc[3] = 12488;
-//     ptrs[4] = my_malloc(12988); dc[4] = 13000;
-//     ptrs[14] = my_malloc(12866); dc[14] = 12880;
-// }
