@@ -88,36 +88,6 @@ void free_list_delete(Flist node) {
 }
 
 /**
- * Combine all adjacent entries in the free list into a single node
- */
-void coalesce_free_list() {
-    Flist l = free_list_begin();
-    while (l != NULL) {
-        Flist next = l->flink;
-
-        // If the next node is adjacent, combine them
-        if ((void*)l + l->size == next) {
-            l->size += next->size;
-            free_list_delete(next);
-        } else {
-            l = l->flink;
-        }
-    }
-}
-
-void print_free_list() {
-    printf("------------------------- Free List -------------------------\n");
-    printf("%-10s    %-5s    %-10s    %-10s    %-10s\n", "address", "size", "flink", "blink", "&p + size");
-
-    Flist l;
-    for (l = free_list_begin(); l != NULL; l = free_list_next(l)) {
-        printf("0x%08x    %-5d    0x%08x    0x%08x    0x%08x\n", l, l->size, l->flink, l->blink, (void*)l + l->size);
-    }
-
-    printf("-------------------------------------------------------------\n\n");
-}
-
-/**
  * Create a new free list node with the given size and add it to the list
  * 
  * @param size The size of the free node
@@ -137,6 +107,24 @@ Flist create_new_node(size_t size) {
     free_list_insert(node);
 
     return node;
+}
+
+/**
+ * Combine all adjacent entries in the free list into a single node
+ */
+void coalesce_free_list() {
+    Flist l = free_list_begin();
+    while (l != NULL) {
+        Flist next = l->flink;
+
+        // If the next node is adjacent, combine them
+        if ((void*)l + l->size == next) {
+            l->size += next->size;
+            free_list_delete(next);
+        } else {
+            l = l->flink;
+        }
+    }
 }
 
 /**
