@@ -18,24 +18,6 @@ typedef struct flist {
 
 Flist free_list_head = NULL;
 
-/**
- * Round a number up to the nearest multiple
- * 
- * @param n The number to round
- * @param multiple The multiple
- * @return int The rounded number
- */
-int roundup(int n, int multiple) {
-    if (multiple == 0) return n;
-
-    int remainder = abs(n) % multiple;
-    if (remainder == 0) return n;
-
-    if (n < 0)
-        return -(abs(n) - remainder);
-    else
-        return n + multiple - remainder;
-}
 
 /**
  * Get the head of the free list
@@ -58,21 +40,84 @@ void *free_list_next(void *node) {
 }
 
 /**
- * Create a new free list node with the given size
+ * Insert the given node into the free list by pushing it to the head
+ * 
+ * @param node The node to insert into the free list
+ */
+void free_list_insert(Flist node) {
+    // If the free list is empty, this node becomes the head
+    if (free_list_head == NULL) {
+        free_list_head = node;
+        return;
+    }
+
+    // Flist l;
+    // for (l = free_list_begin(); l != NULL; l = free_list_next(l)) {
+    //     if (free_list_next(l) == NULL) break;
+    //     if (l->flink == NULL || (l < node && l->flink > node)) {
+
+    //     }
+    // }
+
+    // if (free_list_next(l) == NULL) {
+    //     l->flink = node;
+    //     node->blink = l;
+    // }
+
+    // Replace the current head with the new node
+    node->flink = free_list_head;
+    free_list_head->blink = node;
+    free_list_head = node;
+}
+
+/**
+ * Delete the given node from the free list
+ * 
+ * @param node The node to delete from the free list
+ */
+void free_list_delete(Flist node) {
+    if (node == free_list_head)
+        free_list_head = node->flink;
+
+    if (node->blink)
+        node->blink->flink = node->flink;
+
+    if (node->flink)
+        node->flink->blink = node->blink;
+}
+
+void print_free_list() {
+    printf("---------------- Free List ----------------\n");
+    printf("%-10s    %-5s    %-10s    %-10s\n", "address", "size", "flink", "blink");
+
+    Flist l;
+    for (l = free_list_begin(); l != NULL; l = free_list_next(l)) {
+        printf("0x%08x    %-5d    0x%08x    0x%08x\n", l, l->size, l->flink, l->blink);
+    }
+
+    printf("-------------------------------------------\n\n");
+}
+
+/**
+ * Create a new free list node with the given size and add it to the list
  * 
  * @param size The size of the free node
  * @return Flist A pointer to the free node
  */
 Flist create_new_node(size_t size) {
     size_t sbrk_size = 8192;
-    if (size > 8184) sbrk_size = roundup(size + 8, 8);
+    if (size > 8184) sbrk_size = (size + 7 + 8) & -8;
 
-    Flist free_node = (Flist) sbrk(sbrk_size);
-    free_node->size = sbrk_size;
-    free_node->blink = NULL;
-    free_node->flink = NULL;
+    // Create the new node with sbrk
+    Flist node = (Flist) sbrk(sbrk_size);
+    node->size = sbrk_size;
+    node->blink = NULL;
+    node->flink = NULL;
 
-    return free_node;
+    // Add the new node to the free list
+    free_list_insert(node);
+
+    return node;
 }
 
 /**
@@ -83,70 +128,37 @@ Flist create_new_node(size_t size) {
  * @return void* A pointer to the beginning of the chunk of memory
  */
 void *my_malloc(size_t size) {
-    void *p;
     Flist free_node;
 
     // We need to allocate an extra 8 bytes for bookkeeping
     // and the size needs to be a multiple of 8
-    size_t allocation = roundup(size + 8, 8);
+    size_t allocation = (size + 7 + 8) & -8;
 
-    // If free_list_head is NULL, then the free list is empty and we need to
-    // use sbrk to get memory to use
-    if (free_list_head == NULL) {
-        free_list_head = create_new_node(size);
-        free_node = free_list_head;
+    // Search for the next free node
+    for (free_node = free_list_begin(); free_node != NULL; free_node = free_list_next(free_node))
+        if (free_node->size >= allocation) break;
 
-    // Find the next free node that has enough memory to hold size
-    } else {
-        Flist last_node = free_list_head;
-        free_node = free_list_head;
-
-        // Find the next node that has enough space
-        while (1) {
-
-            // If a free node couldn't be found, get a new big chunk of memory
-            if (free_node == NULL) {
-                free_node = create_new_node(size);
-                if (last_node != NULL) last_node->flink = free_node;
-                break;
-            }
-
-            if (free_node->size >= allocation) break;
-
-            free_node = free_list_next(free_node);
-            last_node = free_node;
-        }
-    }
+    // If a node couldn't be found, create one
+    if (free_node == NULL)
+        free_node = create_new_node(size);
 
     // Keep track of the new size of this node
     free_node->size -= allocation;
 
     // Remove the specified amount of memory from the bottom of the free list node
-    void *new_chunk = (void*)free_node + free_node->size;
+    Flist alloc_node = (void*)free_node + free_node->size;
+
+    // Check if the node has enough for another allocation
+    // If not, give the user the rest of the bytes and delete the node
+    if (free_node->size <= 16) {
+        allocation += free_node->size;
+        free_list_delete(free_node);
+    }
 
     // Set the size of the new chunk
-    ((Flist)new_chunk)->size = allocation;
-
-    // Delete this node if it has been consumed
-    if (free_node->size == 0) {
-        // Flist new_node = create_new_node(0);
-        // new_node->blink = free_node->blink;
-        // new_node->flink = free_node->flink;
-
-        // if (free_list_head == free_node) {
-        //     free_list_head = new_node;
-        // } else {
-        //     if(free_node->blink) free_node->blink->flink = new_node;
-        //     if(free_node->flink) free_node->flink->blink = new_node;
-        // }
-        if (free_node->blink)
-            free_node->blink->flink = free_node->flink;
-
-        if (free_node->flink)
-            free_node->flink->blink = free_node->blink;
-    }
+    alloc_node->size = allocation;
     
-    return new_chunk + 8;
+    return (void*)alloc_node + 8;
 }
 
 /**
@@ -156,86 +168,110 @@ void *my_malloc(size_t size) {
  */
 void my_free(void *ptr) {
     Flist node = ptr - 8;
-
-    // If the free list is empty, this node becomes the head
-    if (free_list_head == NULL) {
-        free_list_head = node;
-        return;
-    }
-
-    // Replace the current head with the new node
-    free_list_head->blink = node;
-    node->flink = free_list_head;
-    free_list_head = node;
+    free_list_insert(node);
 }
 
-void print_free_list() {
-    if (free_list_head == NULL) return;
-
-    printf("---------------- Free List ----------------\n");
-    printf("%-10s    %-5s    %-10s    %-10s\n", "address", "size", "flink", "blink");
-
-    Flist free_node = free_list_head;
-    while (free_node != NULL) {
-        printf("0x%08x    %-5d    0x%08x    0x%08x\n", free_node, free_node->size, free_node->flink, free_node->blink);
-        free_node = free_node->flink;
-    }
-
-    printf("-------------------------------------------\n\n");
-}
-
-// int main() {
-//     void* p = my_malloc(16);
-//     void* q = my_malloc(1024);
-//     printf("&p: 0x%08x\n", p);
-//     printf("&q: 0x%08x\n", q);
-//     printf("&q - &p: 0x%08x (%d)\n", q - p, q - p);
+// int main () {
+//     void *p = my_malloc(8923);
+//     printf("my_malloc(%d)\n", 8923);
 //     print_free_list();
 
 //     my_free(p);
 //     printf("my_free(p)\n");
 //     print_free_list();
 
-//     my_free(q);
-//     printf("my_free(q)\n");
+//     void *q = my_malloc(12765);
+//     printf("my_malloc(%d)\n", 12765);
 //     print_free_list();
-
-//     void* r = my_malloc(400);
-//     printf("r = my_malloc(400)     0x%08x\n", r);
-//     print_free_list();
-
-//     void* s = my_malloc(400);
-//     printf("s = my_malloc(400)     0x%08x\n", s);
-//     print_free_list();
-
-//     void* t = my_malloc(400);
-//     printf("t = my_malloc(400)     0x%08x\n", t);
-//     print_free_list();
-
-//     void* u = my_malloc(400);
-//     printf("u = my_malloc(400)     0x%08x\n", u);
-//     print_free_list();
-// 	return 0;
 // }
 
-int main() {
-    
-    void* p = my_malloc(23);
-    printf("my_malloc(23)\n");
-    print_free_list();
+// int main () {
+//     int *ptrs[28];
+//     int *free_ptrs[14];
+//     int dc[28];
 
-    void* q = my_malloc(8200);
-    printf("my_malloc(8200)\n");
-    print_free_list();
-
-    my_free(p);
-    printf("my_free(p)\n");
-    print_free_list();
-
-    my_free(q);
-    printf("my_free(q)\n");
-    print_free_list();
-
-	return 0;
-
-}
+//     free_ptrs[7] = my_malloc(8923);
+//     ptrs[5] = my_malloc(12784); dc[5] = 12792;
+//     ptrs[16] = my_malloc(12777); dc[16] = 12792;
+//     ptrs[15] = my_malloc(12219); dc[15] = 12232;
+//     free_ptrs[8] = my_malloc(8751);
+//     free_ptrs[6] = my_malloc(8262);
+//     free_ptrs[2] = my_malloc(8671);
+//     free_ptrs[9] = my_malloc(8567);
+//     free_ptrs[11] = my_malloc(8591);
+//     ptrs[26] = my_malloc(12043); dc[26] = 12056;
+//     free_ptrs[5] = my_malloc(8389);
+//     free_ptrs[12] = my_malloc(8399);
+//     ptrs[18] = my_malloc(12453); dc[18] = 12464;
+//     free_ptrs[10] = my_malloc(8466);
+//     free_ptrs[4] = my_malloc(8270);
+//     free_ptrs[3] = my_malloc(8498);
+//     free_ptrs[13] = my_malloc(8432);
+//     ptrs[20] = my_malloc(12300); dc[20] = 12312;
+//     free_ptrs[0] = my_malloc(9157);
+//     ptrs[27] = my_malloc(12878); dc[27] = 12888;
+//     ptrs[21] = my_malloc(12318); dc[21] = 12328;
+//     ptrs[8] = my_malloc(12737); dc[8] = 12752;
+//     ptrs[13] = my_malloc(12817); dc[13] = 12832;
+//     free_ptrs[1] = my_malloc(8578);
+//     my_free(free_ptrs[7]);
+//     printf("my_free(free_ptrs[7])\n");
+//     print_free_list();
+//     ptrs[1] = my_malloc(12765); dc[1] = 12776;
+//     ptrs[23] = my_malloc(12751); dc[23] = 12760;
+//     my_free(free_ptrs[0]);
+//     printf("my_free(free_ptrs[0])\n");
+//     print_free_list();
+//     my_free(free_ptrs[5]);
+//     printf("my_free(free_ptrs[5])\n");
+//     print_free_list();
+//     ptrs[22] = my_malloc(12407); dc[22] = 12416;
+//     ptrs[12] = my_malloc(12534); dc[12] = 12544;
+//     ptrs[19] = my_malloc(12960); dc[19] = 12968;
+//     ptrs[24] = my_malloc(12420); dc[24] = 12432;
+//     my_free(free_ptrs[3]);
+//     printf("my_free(free_ptrs[3])\n");
+//     print_free_list();
+//     ptrs[25] = my_malloc(12893); dc[25] = 12904;
+//     ptrs[7] = my_malloc(12890); dc[7] = 12904;
+//     ptrs[9] = my_malloc(12105); dc[9] = 12120;
+//     ptrs[2] = my_malloc(12315); dc[2] = 12328;
+//     my_free(free_ptrs[4]);
+//     printf("my_free(free_ptrs[4])\n");
+//     print_free_list();
+//     my_free(free_ptrs[13]);
+//     printf("my_free(free_ptrs[13])\n");
+//     print_free_list();
+//     my_free(free_ptrs[6]);
+//     printf("my_free(free_ptrs[6])\n");
+//     print_free_list();
+//     my_free(free_ptrs[12]);
+//     printf("my_free(free_ptrs[12])\n");
+//     print_free_list();
+//     my_free(free_ptrs[2]);
+//     printf("my_free(free_ptrs[2])\n");
+//     print_free_list();
+//     ptrs[10] = my_malloc(12138); dc[10] = 12152;
+//     my_free(free_ptrs[10]);
+//     printf("my_free(free_ptrs[10])\n");
+//     print_free_list();
+//     my_free(free_ptrs[8]);
+//     printf("my_free(free_ptrs[8])\n");
+//     print_free_list();
+//     ptrs[0] = my_malloc(12505); dc[0] = 12520;
+//     my_free(free_ptrs[11]);
+//     printf("my_free(free_ptrs[11])\n");
+//     print_free_list();
+//     ptrs[11] = my_malloc(12954); dc[11] = 12968;
+//     my_free(free_ptrs[9]);
+//     printf("my_free(free_ptrs[9])\n");
+//     print_free_list();
+//     ptrs[6] = my_malloc(12164); dc[6] = 12176;
+//     ptrs[17] = my_malloc(12529); dc[17] = 12544;
+//     my_free(free_ptrs[1]);
+//     printf("my_free(free_ptrs[1])\n");
+//     print_free_list();
+//     ptrs[3] = my_malloc(12475); dc[3] = 12488;
+//     ptrs[4] = my_malloc(12988); dc[4] = 13000;
+//     ptrs[14] = my_malloc(12866); dc[14] = 12880;
+// }
