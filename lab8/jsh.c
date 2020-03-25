@@ -17,6 +17,8 @@
 #include "jrb.h"
 #include "dllist.h"
 
+#define streq(str1, str2) strcmp(str1, str2) == 0
+
 typedef struct field {
     char** args;
     int argc;
@@ -31,6 +33,17 @@ typedef struct field {
 //     char* fields[1] = "jsh.c"
 //     char* fields[2] = ">"
 //     char* fields[3] = "test.txt"
+
+//     char* fields[0] = "sleep"
+//     char* fields[1] = "2"
+//     char* fields[2] = "&"
+
+//     char* fields[0] = "cat"
+//     char* fields[1] = "jsh.c"
+//     char* fields[2] = ">"
+//     char* fields[3] = "test.txt"
+//     char* fields[4] = "&&"
+//     char* fields[5] = "ls"
 
 Field* split_fields(int NF, char** fields) {
     Field* head = NULL;
@@ -127,34 +140,46 @@ int main(int argc, char **argv, char **envp) {
 
         // Child process
         if (fork() == 0) {
-            int fd_in, fd_out;
-
             if (f->redirect_stdin != NULL) {
-                fd_in = open(f->redirect_stdin->args[0], O_RDONLY);
-                if (fd_in < 0) {
+                int fd = open(f->redirect_stdin->args[0], O_RDONLY);
+                if (fd < 0) {
                     perror("jsh: redirect stdin");
                     exit(1);
                 }
 
-                if (dup2(fd_in, 0) != 0) {
-                    perror("jsh: dup2(fd_in, 0)");
+                if (dup2(fd, 0) != 0) {
+                    perror("jsh: dup2(fd, 0)");
                     exit(1);
                 }
-                close(fd_in);
+                close(fd);
             }
 
             if (f->redirect_stdout != NULL) {
-                fd_out = open(f->redirect_stdout->args[0], O_WRONLY | O_TRUNC | O_CREAT, 0644);
-                if (fd_out < 0) {
+                int fd = open(f->redirect_stdout->args[0], O_WRONLY | O_TRUNC | O_CREAT, 0644);
+                if (fd < 0) {
                     perror("jsh: redirect stdin");
                     exit(1);
                 }
 
-                if (dup2(fd_out, 1) != 1) {
-                    perror("jsh: dup2(fd_out, 0)");
+                if (dup2(fd, 1) != 1) {
+                    perror("jsh: dup2(fd, 1)");
                     exit(1);
                 }
-                close(fd_out);
+                close(fd);
+            }
+
+            if (f->redirect_append_stdout != NULL) {
+                int fd = open(f->redirect_append_stdout->args[0], O_WRONLY | O_APPEND | O_CREAT, 0644);
+                if (fd < 0) {
+                    perror("jsh: redirect stdin");
+                    exit(1);
+                }
+
+                if (dup2(fd, 1) != 1) {
+                    perror("jsh: dup2(fd, 1)");
+                    exit(1);
+                }
+                close(fd);
             }
 
             status = execvp(f->args[0], f->args);
