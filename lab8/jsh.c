@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 #include "fields.h"
 #include "jrb.h"
 #include "dllist.h"
@@ -18,21 +20,11 @@
 typedef struct field {
     char** args;
     int argc;
+    int run_in_background;
     struct field *redirect_stdout;
     struct field *redirect_append_stdout;
     struct field *redirect_stdin;
 } Field;
-
-int get_num_tokens(int NF, char** fields) {
-    int num = 0;
-    int i = 0;
-    for (i = 0; i < NF; i++) {
-        if (strcmp(fields[i], ">") == 0 || 
-            strcmp(fields[i], "<") == 0 || 
-            strcmp(fields[i], ">>") == 0) num++;
-    }
-    return num;
-}
 
 // **fields (*fields[1000]):
 //     char* fields[0] = "cat"
@@ -53,8 +45,10 @@ Field* split_fields(int NF, char** fields) {
         if (strcmp(fields[i], ">") != 0 && 
             strcmp(fields[i], "<") != 0 && 
             strcmp(fields[i], ">>") != 0 &&
+            strcmp(fields[i], "&") != 0 &&
             i + 1 != NF) continue;
-        if (i + 1 == NF) i++;
+        
+        if (strcmp(fields[i], "&") != 0 && i + 1 == NF) i++;
 
         // Allocate a new field
         Field* f = (Field*) malloc(sizeof(Field));
@@ -74,12 +68,15 @@ Field* split_fields(int NF, char** fields) {
             last_field->redirect_stdin = f;
         } else if (strcmp(last_token, ">>") == 0) {
             last_field->redirect_append_stdout = f;
+        } else if (i != NF && strcmp(fields[i], "&") == 0) {
+            f->run_in_background = 1;
         }
 
         if (head == NULL) head = f;
         last_field = f;
 
         if (i == NF) break;
+
         if (strcmp(fields[i], ">") == 0 || 
             strcmp(fields[i], "<") == 0 || 
             strcmp(fields[i], ">>") == 0) strcpy(last_token, fields[i]);
@@ -130,13 +127,44 @@ int main(int argc, char **argv, char **envp) {
 
         // Child process
         if (fork() == 0) {
-            status = execvp(is->fields[0], is->fields);
+            int fd_in, fd_out;
+
+            if (f->redirect_stdin != NULL) {
+                fd_in = open(f->redirect_stdin->args[0], O_RDONLY);
+                if (fd_in < 0) {
+                    perror("jsh: redirect stdin");
+                    exit(1);
+                }
+
+                if (dup2(fd_in, 0) != 0) {
+                    perror("jsh: dup2(fd_in, 0)");
+                    exit(1);
+                }
+                close(fd_in);
+            }
+
+            if (f->redirect_stdout != NULL) {
+                fd_out = open(f->redirect_stdout->args[0], O_WRONLY | O_TRUNC | O_CREAT, 0644);
+                if (fd_out < 0) {
+                    perror("jsh: redirect stdin");
+                    exit(1);
+                }
+
+                if (dup2(fd_out, 1) != 1) {
+                    perror("jsh: dup2(fd_out, 0)");
+                    exit(1);
+                }
+                close(fd_out);
+            }
+
+            status = execvp(f->args[0], f->args);
             perror("fork");
             exit(1);
 
         // Parent process
         } else {
-            wait(&status);
+            if (!f->run_in_background)
+                wait(&status);
         }
     }
 
