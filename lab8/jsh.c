@@ -23,6 +23,7 @@ typedef struct cmd {
     char* args[100];
     int argc;
     int run_in_background;
+    int completed;
     char* redirect_stdout;
     char* redirect_append_stdout;
     char* redirect_stdin;
@@ -88,6 +89,9 @@ int scan_next_cmd(IS is, int current_index, Command* cmd) {
             return i + 1;
         } else if (strcmp(field, ";") == 0) {
             return -1;
+        } else if (strcmp(field, "&") == 0) {
+            cmd->run_in_background = 1;
+            return -1;
         } else if (is_token(field)) {
             return scan_redirects(is, i, cmd);
         } else {
@@ -135,158 +139,6 @@ Command* get_cmd(IS is) {
     return head;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-Command* extract_commands(IS is) {
-    Command* head = NULL;
-    Command* cmd = NULL;
-    int i, j;
-    int last_i = 0;
-
-    for (i = 0; i < is->NF; i++) {
-        // Check for ampersand to run command in background
-        if (strcmp(is->fields[i], "&") == 0) {
-            if (cmd != NULL) cmd->run_in_background = 1;
-
-        // Check if we've encountered a token, or if we've reached the end
-        } else if (is_token(is->fields[i]) || i + 1 == is->NF) {
-            if (i + 1 == is->NF) i++;
-
-            Command* new_cmd = (Command*) malloc(sizeof(Command));
-            new_cmd->args = malloc(sizeof(char) * (i - last_i + 1));
-            new_cmd->argc = i - last_i;
-
-            // Keep track of the first command
-            if (head == NULL)
-                head = new_cmd;
-
-            // Extract arguments
-            int k = 0;
-            for (j = last_i; j < i; j++) {
-                new_cmd->args[k++] = is->fields[j];
-            }
-            new_cmd->args[k] = NULL;
-
-            if (cmd != NULL && i != is->NF && is_token(is->fields[i])) {
-                char* token = is->fields[i];
-                if (strcmp(token, ">") == 0) {
-                    cmd->redirect_stdout = new_cmd;
-
-                } else if (strcmp(token, "<") == 0) {
-                    cmd->redirect_stdin = new_cmd;
-
-                } else if (strcmp(token, ">>") == 0) {
-                    cmd->redirect_append_stdout = new_cmd;
-
-                } else if (strcmp(token, "|") == 0) {
-                    cmd->pipe_output = new_cmd;
-
-                    // Update the command since we've encountered a pipe
-                    cmd = new_cmd;
-                }
-            }
-
-            if (cmd == NULL)
-                cmd = new_cmd;
-
-            last_i = i;
-        }
-    }
-
-    return head;
-}
-
-Command* split_fields(int NF, char** fields) {
-    Command* head = NULL;
-    Command* last_command = NULL;
-    char last_token[3];
-
-    int i = 0;
-    int ii = 0;
-
-    for (i = 0; i < NF; i++) {
-        // Find the next special token
-        if (strcmp(fields[i], ">") != 0 && 
-            strcmp(fields[i], "<") != 0 && 
-            strcmp(fields[i], ">>") != 0 &&
-            strcmp(fields[i], "|") != 0 &&
-            strcmp(fields[i], "&") != 0 &&
-            i + 1 != NF) continue;
-        
-        if (strcmp(fields[i], "&") != 0 && i + 1 == NF) i++;
-
-        // Allocate a new command
-        Command* cmd = (Command*) malloc(sizeof(Command));
-        cmd->args = malloc(sizeof(char*) * (i-ii) + 1);
-        cmd->argc = i-ii;
-
-        // Extract the arguments
-        int k = 0;
-        int j;
-        for (j = ii; j < i; j++) {
-            cmd->args[k++] = strdup(fields[j]);
-        }
-
-        cmd->args[cmd->argc] = NULL;
-
-        // Redirect output
-        if (strcmp(last_token, ">") == 0) {
-            last_command->redirect_stdout = cmd;
-
-        // Redirect input
-        } else if (strcmp(last_token, "<") == 0) {
-            last_command->redirect_stdin = cmd;
-
-        // Redirect output and append
-        } else if (strcmp(last_token, ">>") == 0) {
-            last_command->redirect_append_stdout = cmd;
-
-        // Pipe output
-        } else if (strcmp(last_token, "|") == 0) {
-            last_command->pipe_output = cmd;
-            last_command = cmd;
-
-        // Run in background
-        } else if (i != NF && strcmp(fields[i], "&") == 0) {
-            cmd->run_in_background = 1;
-        }
-
-        if (last_command == NULL) last_command = cmd;
-
-        if (head == NULL) head = cmd;
-
-        if (i == NF) break;
-
-        if (strcmp(fields[i], ">") == 0 || 
-            strcmp(fields[i], "<") == 0 || 
-            strcmp(fields[i], ">>") == 0 ||
-            strcmp(fields[i], "|") == 0) strcpy(last_token, fields[i]);
-
-        // Update the last position (skipping the special token)
-        ii = i + 1;
-    }
-
-    return head;
-}
-*/
-
 void print_command(Command* cmd) {
     int i;
 
@@ -295,6 +147,8 @@ void print_command(Command* cmd) {
         printf("  [%d]: %s\n", i, cmd->args[i]);
     }
     printf("\n");
+
+    printf("%-25s%d\n", "Run in background:", cmd->run_in_background);
 
     printf("%-25s", "Redirect stdin:");
     if (cmd->redirect_stdin != NULL) printf("%s", cmd->redirect_stdin);
@@ -407,10 +261,12 @@ void run_command(Command* cmd) {
             close(pipefd[1]);
             close(pipefd[0]);
             wait(&s2);
+            cmd->pipe_output->completed = 1;
         }
 
         if (!cmd->run_in_background)
             wait(&s1);
+            cmd->completed = 1;
     }
 }
 
@@ -438,8 +294,13 @@ int main(int argc, char **argv, char **envp) {
         exit(1);
     }
 
+    Command* cmd = NULL;
     IS is = new_inputstruct(NULL);
     while (1) {
+        // End the program if this is a forked version
+        if (cmd != NULL && !cmd->completed) break;
+
+        // Print the prompt
         printf("%s", prompt);
 
         // Get the command from the prompt
@@ -448,7 +309,9 @@ int main(int argc, char **argv, char **envp) {
         // Skip empty commands
         if (is->NF == 0) continue;
 
-        print_command(get_cmd(is));
+        cmd = get_cmd(is);
+        //print_command(cmd);
+        run_command(cmd);
     }
 
     jettison_inputstruct(is);
