@@ -20,12 +20,12 @@
 #define streq(str1, str2) strcmp(str1, str2) == 0
 
 typedef struct cmd {
-    char** args;
+    char* args[100];
     int argc;
     int run_in_background;
-    struct cmd *redirect_stdout;
-    struct cmd *redirect_append_stdout;
-    struct cmd *redirect_stdin;
+    char* redirect_stdout;
+    char* redirect_append_stdout;
+    char* redirect_stdin;
     struct cmd *pipe_output;
 } Command;
 
@@ -49,10 +49,111 @@ typedef struct cmd {
 int is_token(char* str) {
     return strcmp(str, ">") == 0 || 
            strcmp(str, "<") == 0 || 
-           strcmp(str, ">>") == 0 ||
-           strcmp(str, "|") == 0;
+           strcmp(str, ">>") == 0;
 }
 
+int scan_next_redirect(IS is, int current_index, Command* cmd, char* token) {
+    if (strcmp(token, "<") == 0) {
+        cmd->redirect_stdin = strdup(is->fields[current_index + 1]);
+    } else if (strcmp(token, ">") == 0) {
+        cmd->redirect_stdout = strdup(is->fields[current_index + 1]);
+    } else if (strcmp(token, ">>") == 0) {
+        cmd->redirect_append_stdout = strdup(is->fields[current_index + 1]);
+    } else {
+        return 0;
+    }
+
+    return 1;
+}
+
+int scan_redirects(IS is, int current_index, Command* cmd) {
+    int i = current_index;
+    int result = 1;
+
+    while (result) {
+        result = scan_next_redirect(is, i, cmd, is->fields[i]);
+        if (result) i += 2;
+    }
+
+    return i;
+}
+
+int scan_next_cmd(IS is, int current_index, Command* cmd) {
+    int i;
+
+    for (i = current_index; i < is->NF; i++) {
+        char* field = is->fields[i];
+
+        if (strcmp(field, "|") == 0) {
+            return i + 1;
+        } else if (strcmp(field, ";") == 0) {
+            return -1;
+        } else if (is_token(field)) {
+            return scan_redirects(is, i, cmd);
+        } else {
+            cmd->args[cmd->argc++] = strdup(field);
+        }
+    }
+
+    return -2;
+}
+
+Command* get_cmd(IS is) {
+    int i = 0;
+
+    Command* head = NULL;
+    Command* cmd = NULL;
+
+    // Add semicolon at end of input to represent end of all commands
+    is->fields[is->NF] = ";";
+    is->NF++;
+
+    while (i >= 0 && i < is->NF) {
+        Command* new_cmd = (Command*) malloc(sizeof(Command));
+        i = scan_next_cmd(is, i, new_cmd);
+
+        // Keep track of the first command
+        if (head == NULL)
+            head = new_cmd;
+
+        if (new_cmd->argc > 0) {
+            if (cmd != NULL)
+                cmd->pipe_output = new_cmd;
+
+            cmd = new_cmd;
+        } else {
+            free(new_cmd);
+        }
+
+        // If nothing was scanned
+        if (i == -2) {
+            free(new_cmd);
+            break;
+        }
+    }
+
+    return head;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
 Command* extract_commands(IS is) {
     Command* head = NULL;
     Command* cmd = NULL;
@@ -111,23 +212,6 @@ Command* extract_commands(IS is) {
 
     return head;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 Command* split_fields(int NF, char** fields) {
     Command* head = NULL;
@@ -201,6 +285,7 @@ Command* split_fields(int NF, char** fields) {
 
     return head;
 }
+*/
 
 void print_command(Command* cmd) {
     int i;
@@ -212,17 +297,17 @@ void print_command(Command* cmd) {
     printf("\n");
 
     printf("%-25s", "Redirect stdin:");
-    if (cmd->redirect_stdin != NULL) printf("%s", cmd->redirect_stdin->args[0]);
+    if (cmd->redirect_stdin != NULL) printf("%s", cmd->redirect_stdin);
     else printf("none");
     printf("\n");
 
     printf("%-25s", "Redirect stdout:");
-    if (cmd->redirect_stdout != NULL) printf("%s", cmd->redirect_stdout->args[0]);
+    if (cmd->redirect_stdout != NULL) printf("%s", cmd->redirect_stdout);
     else printf("none");
     printf("\n");
 
     printf("%-25s", "Redirect append stdout:");
-    if (cmd->redirect_append_stdout != NULL) printf("%s", cmd->redirect_append_stdout->args[0]);
+    if (cmd->redirect_append_stdout != NULL) printf("%s", cmd->redirect_append_stdout);
     else printf("none");
     printf("\n");
 
@@ -249,7 +334,7 @@ void run_command(Command* cmd) {
     // Child process
     if (fork() == 0) {
         if (cmd->redirect_stdin != NULL) {
-            int fd = open(cmd->redirect_stdin->args[0], O_RDONLY);
+            int fd = open(cmd->redirect_stdin, O_RDONLY);
             if (fd < 0) {
                 perror("jsh: redirect stdin");
                 exit(1);
@@ -263,7 +348,7 @@ void run_command(Command* cmd) {
         }
         
         if (cmd->redirect_stdout != NULL) {
-            int fd = open(cmd->redirect_stdout->args[0], O_WRONLY | O_TRUNC | O_CREAT, 0644);
+            int fd = open(cmd->redirect_stdout, O_WRONLY | O_TRUNC | O_CREAT, 0644);
             if (fd < 0) {
                 perror("jsh: redirect stdin");
                 exit(1);
@@ -277,7 +362,7 @@ void run_command(Command* cmd) {
         }
         
         if (cmd->redirect_append_stdout != NULL) {
-            int fd = open(cmd->redirect_append_stdout->args[0], O_WRONLY | O_APPEND | O_CREAT, 0644);
+            int fd = open(cmd->redirect_append_stdout, O_WRONLY | O_APPEND | O_CREAT, 0644);
             if (fd < 0) {
                 perror("jsh: redirect stdin");
                 exit(1);
@@ -363,8 +448,7 @@ int main(int argc, char **argv, char **envp) {
         // Skip empty commands
         if (is->NF == 0) continue;
 
-        print_command(extract_commands(is));
-        //run_command(extract_commands(is));
+        print_command(get_cmd(is));
     }
 
     jettison_inputstruct(is);
