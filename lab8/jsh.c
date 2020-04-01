@@ -30,29 +30,27 @@ typedef struct cmd {
     struct cmd *pipe_output;
 } Command;
 
-// **fields (*fields[1000]):
-//     char* fields[0] = "cat"
-//     char* fields[1] = "jsh.c"
-//     char* fields[2] = ">"
-//     char* fields[3] = "test.txt"
-
-//     char* fields[0] = "sleep"
-//     char* fields[1] = "2"
-//     char* fields[2] = "&"
-
-//     char* fields[0] = "cat"
-//     char* fields[1] = "jsh.c"
-//     char* fields[2] = ">"
-//     char* fields[3] = "test.txt"
-//     char* fields[4] = "&&"
-//     char* fields[5] = "ls"
-
+/**
+ * Check if a string is a token for redirection
+ * 
+ * @param str The string
+ * @return int 1 if the string is a token, 0 if not
+ */
 int is_token(char* str) {
     return strcmp(str, ">") == 0 || 
            strcmp(str, "<") == 0 || 
            strcmp(str, ">>") == 0;
 }
 
+/**
+ * Scan the next redirect for the given command
+ * 
+ * @param is The input struct
+ * @param current_index The current index into the field array
+ * @param cmd The command to scan into
+ * @param token The token to match against
+ * @return int 1 if a redirection was scanned, 0 if not
+ */
 int scan_next_redirect(IS is, int current_index, Command* cmd, char* token) {
     if (strcmp(token, "<") == 0) {
         cmd->redirect_stdin = strdup(is->fields[current_index + 1]);
@@ -67,6 +65,14 @@ int scan_next_redirect(IS is, int current_index, Command* cmd, char* token) {
     return 1;
 }
 
+/**
+ * Scan all redirects for the given command
+ * 
+ * @param is The input struct
+ * @param current_index The current index into the field array
+ * @param cmd The command to scan into
+ * @return int The index where the next command's fields begin
+ */
 int scan_redirects(IS is, int current_index, Command* cmd) {
     int i = current_index;
     int result = 1;
@@ -79,21 +85,39 @@ int scan_redirects(IS is, int current_index, Command* cmd) {
     return i;
 }
 
+/**
+ * Scan the next command
+ * 
+ * @param is The input struct
+ * @param current_index The current index into the field array
+ * @param cmd The command to scan into
+ * @return int -1 if we've reached the end of all commands, -2 if nothing was scanned, otherwise, the index
+ *             where the next command's fields begin
+ */
 int scan_next_cmd(IS is, int current_index, Command* cmd) {
     int i;
 
     for (i = current_index; i < is->NF; i++) {
         char* field = is->fields[i];
 
+        // Scan command up until next pipe
         if (strcmp(field, "|") == 0) {
             return i + 1;
+
+        // Scan to end of all commands
         } else if (strcmp(field, ";") == 0) {
             return -1;
+
+        // Scan background token
         } else if (strcmp(field, "&") == 0) {
             cmd->run_in_background = 1;
             return -1;
+
+        // Scan all redirects for the current command
         } else if (is_token(field)) {
             return scan_redirects(is, i, cmd);
+
+        // Add field to current command's arguments
         } else {
             cmd->args[cmd->argc++] = strdup(field);
         }
@@ -102,6 +126,12 @@ int scan_next_cmd(IS is, int current_index, Command* cmd) {
     return -2;
 }
 
+/**
+ * Scan the entire line of input into commands
+ * 
+ * @param is The input struct
+ * @return Command* The first command to execute
+ */
 Command* get_cmd(IS is) {
     int i = 0;
 
@@ -120,14 +150,16 @@ Command* get_cmd(IS is) {
         if (head == NULL)
             head = new_cmd;
 
-        if (new_cmd->argc > 0) {
-            if (cmd != NULL)
-                cmd->pipe_output = new_cmd;
-
-            cmd = new_cmd;
-        } else {
+        // If nothing was scanned
+        if (new_cmd->argc == 0) {
             free(new_cmd);
+            break;
         }
+
+        if (cmd != NULL)
+            cmd->pipe_output = new_cmd;
+
+        cmd = new_cmd;
 
         // If nothing was scanned
         if (i == -2) {
@@ -279,6 +311,7 @@ int main(int argc, char **argv, char **envp) {
         // Default to jsh prompt
         strcpy(prompt, "jsh: ");
         break;
+
     case 2:
         // Don't print a prompt if user specified '-'
         if (strcmp(argv[1], "-") == 0) {
@@ -288,6 +321,7 @@ int main(int argc, char **argv, char **envp) {
 
         strcpy(prompt, argv[1]);
         break;
+
     default:
         // User specified improper arguments
         fprintf(stderr, "usage: %s [prompt]\n", argv[0]);
@@ -310,6 +344,7 @@ int main(int argc, char **argv, char **envp) {
         if (is->NF == 0) continue;
 
         cmd = get_cmd(is);
+        
         //print_command(cmd);
         run_command(cmd);
     }
