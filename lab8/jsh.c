@@ -24,6 +24,7 @@ typedef struct cmd {
     int argc;
     int run_in_background;
     int completed;
+    pid_t pid;
     char* redirect_stdout;
     char* redirect_append_stdout;
     char* redirect_stdin;
@@ -82,6 +83,10 @@ int scan_redirects(IS is, int current_index, Command* cmd) {
         if (result) i += 2;
     }
 
+    // Since we've scanned all the redirects, check if there's a background flag as well
+    if (i < is->NF && strcmp(is->fields[i], "&") == 0)
+        cmd->run_in_background = 1;
+
     return i;
 }
 
@@ -96,6 +101,13 @@ int scan_redirects(IS is, int current_index, Command* cmd) {
  */
 int scan_next_cmd(IS is, int current_index, Command* cmd) {
     int i;
+
+    cmd->redirect_stdin = NULL;
+    cmd->redirect_stdout = NULL;
+    cmd->redirect_append_stdout = NULL;
+    cmd->pipe_output = NULL;
+    cmd->completed = 1;
+    cmd->run_in_background = 0;
 
     for (i = current_index; i < is->NF; i++) {
         char* field = is->fields[i];
@@ -150,16 +162,14 @@ Command* get_cmd(IS is) {
         if (head == NULL)
             head = new_cmd;
 
-        // If nothing was scanned
-        if (new_cmd->argc == 0) {
+        if (new_cmd->argc > 0) {
+            if (cmd != NULL)
+                cmd->pipe_output = new_cmd;
+
+            cmd = new_cmd;
+        } else {
             free(new_cmd);
-            break;
         }
-
-        if (cmd != NULL)
-            cmd->pipe_output = new_cmd;
-
-        cmd = new_cmd;
 
         // If nothing was scanned
         if (i == -2) {
@@ -171,37 +181,37 @@ Command* get_cmd(IS is) {
     return head;
 }
 
-void print_command(Command* cmd) {
+void print_command(Command* cmd, FILE* f) {
     int i;
 
-    printf("\nArgs:\n");
+    fprintf(f, "\nArgs:\n");
     for (i = 0; i < cmd->argc; i++) {
-        printf("  [%d]: %s\n", i, cmd->args[i]);
+        fprintf(f, "  [%d]: %s\n", i, cmd->args[i]);
     }
-    printf("\n");
+    fprintf(f, "\n");
 
-    printf("%-25s%d\n", "Run in background:", cmd->run_in_background);
+    fprintf(f, "%-25s%d\n", "Run in background:", cmd->run_in_background);
 
-    printf("%-25s", "Redirect stdin:");
-    if (cmd->redirect_stdin != NULL) printf("%s", cmd->redirect_stdin);
-    else printf("none");
-    printf("\n");
+    fprintf(f, "%-25s", "Redirect stdin:");
+    if (cmd->redirect_stdin != NULL) fprintf(f, "%s", cmd->redirect_stdin);
+    else fprintf(f, "none");
+    fprintf(f, "\n");
 
-    printf("%-25s", "Redirect stdout:");
-    if (cmd->redirect_stdout != NULL) printf("%s", cmd->redirect_stdout);
-    else printf("none");
-    printf("\n");
+    fprintf(f, "%-25s", "Redirect stdout:");
+    if (cmd->redirect_stdout != NULL) fprintf(f, "%s", cmd->redirect_stdout);
+    else fprintf(f, "none");
+    fprintf(f, "\n");
 
-    printf("%-25s", "Redirect append stdout:");
-    if (cmd->redirect_append_stdout != NULL) printf("%s", cmd->redirect_append_stdout);
-    else printf("none");
-    printf("\n");
+    fprintf(f, "%-25s", "Redirect append stdout:");
+    if (cmd->redirect_append_stdout != NULL) fprintf(f, "%s", cmd->redirect_append_stdout);
+    else fprintf(f, "none");
+    fprintf(f, "\n");
 
-    printf("%-25s", "Pipe command:");
-    if (cmd->pipe_output == NULL) printf("none\n");
+    fprintf(f, "%-25s", "Pipe command:");
+    if (cmd->pipe_output == NULL) fprintf(f, "none\n");
     else {
-        printf("\n");
-        print_command(cmd->pipe_output);
+        fprintf(f, "\n");
+        print_command(cmd->pipe_output, f);
     }
 }
 
@@ -217,8 +227,11 @@ void run_command(Command* cmd) {
         }
     }
 
+    fflush(stdout);
+    fflush(stderr);
+
     // Child process
-    if (fork() == 0) {
+    if (cmd->pid > 0 || (cmd->pid = fork()) == 0) {
         if (cmd->redirect_stdin != NULL) {
             int fd = open(cmd->redirect_stdin, O_RDONLY);
             if (fd < 0) {
@@ -276,7 +289,7 @@ void run_command(Command* cmd) {
         exit(1);
 
     // Second child (pipe)
-    } else if (cmd->pipe_output != NULL && fork() == 0) {
+    } else if (cmd->pipe_output != NULL && (cmd->pipe_output->pid = fork()) == 0) {
         if (dup2(pipefd[0], 0) != 0) {   
             perror("jsh: dup2(pipefd[0])");
             exit(1);
@@ -288,18 +301,60 @@ void run_command(Command* cmd) {
         run_command(cmd->pipe_output);
 
     // Parent process
-    } else {
-        if (cmd->pipe_output != NULL) {
-            close(pipefd[1]);
-            close(pipefd[0]);
-            wait(&s2);
-            cmd->pipe_output->completed = 1;
+    } else if(cmd->pid > 0) {
+        // pid_t pid;
+
+        // if (!cmd->completed && !cmd->run_in_background) {
+        //     while (1) {
+        //         pid = wait(&s1);
+
+        //         if (cmd->pid == pid) {
+        //             cmd->completed = 1;
+        //             break;
+        //         }
+
+        //         if (cmd->pipe_output != NULL && cmd->pipe_output->pid == pid)
+        //             cmd->pipe_output->completed = 1;
+        //     }
+        // }
+
+        // if (cmd->pipe_output != NULL && !cmd->pipe_output->run_in_background && !cmd->pipe_output->completed) {
+        //     while (1) {
+        //         pid = wait(&s1);
+
+        //         if (cmd->pipe_output != NULL && cmd->pipe_output->pid == pid) {
+        //             cmd->pipe_output->completed = 1;
+        //             break;
+        //         }
+        //     }
+        // }
+
+        if (cmd->run_in_background) {
+            cmd->completed = 1;
+            return;
         }
 
-        if (!cmd->run_in_background)
-            wait(&s1);
-            cmd->completed = 1;
+        while(wait(&s1) != cmd->pid);
+        cmd->completed = 1;
     }
+}
+
+/**
+ * Check if the command is still running
+ * 
+ * @param cmd The command to check
+ * @return int 1 if the command is still running, 0 if not
+ */
+int is_waiting(Command* cmd) {
+    if (!cmd->completed) return 1;
+
+    Command* c = cmd->pipe_output;
+    while (c != NULL) {
+        if (!c->completed) return 1;
+        c = c->pipe_output;
+    }
+
+    return 0;
 }
 
 int main(int argc, char **argv, char **envp) {
@@ -328,6 +383,8 @@ int main(int argc, char **argv, char **envp) {
         exit(1);
     }
 
+    //stdin = fopen("/home/jplank/cs360/labs/lab8/Gradescript-Examples/021-input.txt", "r");
+
     Command* cmd = NULL;
     IS is = new_inputstruct(NULL);
     while (1) {
@@ -345,7 +402,8 @@ int main(int argc, char **argv, char **envp) {
 
         cmd = get_cmd(is);
         
-        //print_command(cmd);
+        // print_command(cmd, stdout);
+        // print_command(cmd, stderr);
         run_command(cmd);
     }
 
