@@ -215,7 +215,69 @@ void print_command(Command* cmd, FILE* f) {
     }
 }
 
-void run_command(Command* cmd) {
+void run(Command* cmd) {
+    cmd->pid = fork();
+
+    // Child process
+    if (cmd->pid == 0) {
+
+        if (cmd->redirect_stdin != NULL) {
+            int fd = open(cmd->redirect_stdin, O_RDONLY);
+            if (fd < 0) {
+                perror("jsh: redirect stdin");
+                exit(1);
+            }
+
+            if (dup2(fd, 0) != 0) {
+                perror("jsh: dup2(fd, 0)");
+                exit(1);
+            }
+            close(fd);
+        }
+
+        if (cmd->redirect_stdout != NULL) {
+            int fd = open(cmd->redirect_stdout, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+            if (fd < 0) {
+                perror("jsh: redirect stdin");
+                exit(1);
+            }
+
+            if (dup2(fd, 1) != 1) {
+                perror("jsh: dup2(fd, 1)");
+                exit(1);
+            }
+            close(fd);
+        }
+
+        if (cmd->redirect_append_stdout != NULL) {
+            int fd = open(cmd->redirect_append_stdout, O_WRONLY | O_APPEND | O_CREAT, 0644);
+            if (fd < 0) {
+                perror("jsh: redirect stdin");
+                exit(1);
+            }
+
+            if (dup2(fd, 1) != 1) {
+                perror("jsh: dup2(fd, 1)");
+                exit(1);
+            }
+            close(fd);
+        }
+
+        execvp(cmd->args[0], cmd->args);
+        perror(cmd->args[0]);
+        exit(1);
+
+    // Parent process
+    } else {
+
+        if (cmd->run_in_background) return;
+
+        while (wait(NULL) != cmd->pid);
+
+    }
+}
+
+/*void run_command(Command* cmd) {
     int s1, s2;
     int pipefd[2];
 
@@ -230,7 +292,7 @@ void run_command(Command* cmd) {
     fflush(stdout);
     fflush(stderr);
 
-    // Child process
+    // First child process
     if (cmd->pid > 0 || (cmd->pid = fork()) == 0) {
         if (cmd->redirect_stdin != NULL) {
             int fd = open(cmd->redirect_stdin, O_RDONLY);
@@ -337,25 +399,7 @@ void run_command(Command* cmd) {
         while(wait(&s1) != cmd->pid);
         cmd->completed = 1;
     }
-}
-
-/**
- * Check if the command is still running
- * 
- * @param cmd The command to check
- * @return int 1 if the command is still running, 0 if not
- */
-int is_waiting(Command* cmd) {
-    if (!cmd->completed) return 1;
-
-    Command* c = cmd->pipe_output;
-    while (c != NULL) {
-        if (!c->completed) return 1;
-        c = c->pipe_output;
-    }
-
-    return 0;
-}
+}*/
 
 int main(int argc, char **argv, char **envp) {
     char prompt[100];
@@ -387,14 +431,12 @@ int main(int argc, char **argv, char **envp) {
 
     Command* cmd = NULL;
     IS is = new_inputstruct(NULL);
-    while (1) {
-        // End the program if this is a forked version
-        if (cmd != NULL && !cmd->completed) break;
 
+    while (1) {
         // Print the prompt
         printf("%s", prompt);
 
-        // Get the command from the prompt
+        // Get the input from the prompt
         if (get_line(is) < 0) break;
 
         // Skip empty commands
@@ -404,7 +446,7 @@ int main(int argc, char **argv, char **envp) {
         
         // print_command(cmd, stdout);
         // print_command(cmd, stderr);
-        run_command(cmd);
+        run(cmd);
     }
 
     jettison_inputstruct(is);
