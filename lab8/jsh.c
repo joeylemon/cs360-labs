@@ -181,38 +181,52 @@ Command* get_cmd(IS is) {
     return head;
 }
 
-void print_command(Command* cmd, FILE* f) {
-    int i;
+void execute(Command* cmd) {
+    if (cmd->redirect_stdin != NULL) {
+        int fd = open(cmd->redirect_stdin, O_RDONLY);
+        if (fd < 0) {
+            perror("jsh: redirect stdin");
+            exit(1);
+        }
 
-    fprintf(f, "\nArgs:\n");
-    for (i = 0; i < cmd->argc; i++) {
-        fprintf(f, "  [%d]: %s\n", i, cmd->args[i]);
+        if (dup2(fd, 0) != 0) {
+            perror("jsh: dup2(fd, 0)");
+            exit(1);
+        }
+        close(fd);
     }
-    fprintf(f, "\n");
 
-    fprintf(f, "%-25s%d\n", "Run in background:", cmd->run_in_background);
+    if (cmd->redirect_stdout != NULL) {
+        int fd = open(cmd->redirect_stdout, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+        if (fd < 0) {
+            perror("jsh: redirect stdin");
+            exit(1);
+        }
 
-    fprintf(f, "%-25s", "Redirect stdin:");
-    if (cmd->redirect_stdin != NULL) fprintf(f, "%s", cmd->redirect_stdin);
-    else fprintf(f, "none");
-    fprintf(f, "\n");
-
-    fprintf(f, "%-25s", "Redirect stdout:");
-    if (cmd->redirect_stdout != NULL) fprintf(f, "%s", cmd->redirect_stdout);
-    else fprintf(f, "none");
-    fprintf(f, "\n");
-
-    fprintf(f, "%-25s", "Redirect append stdout:");
-    if (cmd->redirect_append_stdout != NULL) fprintf(f, "%s", cmd->redirect_append_stdout);
-    else fprintf(f, "none");
-    fprintf(f, "\n");
-
-    fprintf(f, "%-25s", "Pipe command:");
-    if (cmd->pipe_output == NULL) fprintf(f, "none\n");
-    else {
-        fprintf(f, "\n");
-        print_command(cmd->pipe_output, f);
+        if (dup2(fd, 1) != 1) {
+            perror("jsh: dup2(fd, 1)");
+            exit(1);
+        }
+        close(fd);
     }
+
+    if (cmd->redirect_append_stdout != NULL) {
+        int fd = open(cmd->redirect_append_stdout, O_WRONLY | O_APPEND | O_CREAT, 0644);
+        if (fd < 0) {
+            perror("jsh: redirect stdin");
+            exit(1);
+        }
+
+        if (dup2(fd, 1) != 1) {
+            perror("jsh: dup2(fd, 1)");
+            exit(1);
+        }
+        close(fd);
+    }
+
+    execvp(cmd->args[0], cmd->args);
+    perror(cmd->args[0]);
+    exit(1);
 }
 
 void run(Command* cmd) {
@@ -221,51 +235,7 @@ void run(Command* cmd) {
     // Child process
     if (cmd->pid == 0) {
 
-        if (cmd->redirect_stdin != NULL) {
-            int fd = open(cmd->redirect_stdin, O_RDONLY);
-            if (fd < 0) {
-                perror("jsh: redirect stdin");
-                exit(1);
-            }
-
-            if (dup2(fd, 0) != 0) {
-                perror("jsh: dup2(fd, 0)");
-                exit(1);
-            }
-            close(fd);
-        }
-
-        if (cmd->redirect_stdout != NULL) {
-            int fd = open(cmd->redirect_stdout, O_WRONLY | O_TRUNC | O_CREAT, 0644);
-            if (fd < 0) {
-                perror("jsh: redirect stdin");
-                exit(1);
-            }
-
-            if (dup2(fd, 1) != 1) {
-                perror("jsh: dup2(fd, 1)");
-                exit(1);
-            }
-            close(fd);
-        }
-
-        if (cmd->redirect_append_stdout != NULL) {
-            int fd = open(cmd->redirect_append_stdout, O_WRONLY | O_APPEND | O_CREAT, 0644);
-            if (fd < 0) {
-                perror("jsh: redirect stdin");
-                exit(1);
-            }
-
-            if (dup2(fd, 1) != 1) {
-                perror("jsh: dup2(fd, 1)");
-                exit(1);
-            }
-            close(fd);
-        }
-
-        execvp(cmd->args[0], cmd->args);
-        perror(cmd->args[0]);
-        exit(1);
+        execute(cmd);
 
     // Parent process
     } else {
@@ -427,8 +397,6 @@ int main(int argc, char **argv, char **envp) {
         exit(1);
     }
 
-    //stdin = fopen("/home/jplank/cs360/labs/lab8/Gradescript-Examples/021-input.txt", "r");
-
     Command* cmd = NULL;
     IS is = new_inputstruct(NULL);
 
@@ -444,8 +412,6 @@ int main(int argc, char **argv, char **envp) {
 
         cmd = get_cmd(is);
         
-        // print_command(cmd, stdout);
-        // print_command(cmd, stderr);
         run(cmd);
     }
 
