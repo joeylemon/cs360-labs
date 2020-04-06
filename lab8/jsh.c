@@ -23,7 +23,6 @@ typedef struct cmd {
     char* args[100];
     int argc;
     int run_in_background;
-    int completed;
     pid_t pid;
     char* redirect_stdout;
     char* redirect_append_stdout;
@@ -35,16 +34,27 @@ typedef struct cmd {
     int pipe_out_fd;
 } Command;
 
-int get_num_cmds(Command* cmd) {
-    int num = 1;
-
-    Command* c = cmd->pipe_output;
-    while (c != NULL) {
-        num++;
-        c = c->pipe_output;
+/**
+ * Clear all memory of the command to default
+ * 
+ * @param cmd The command to clear
+ */
+void command_clear(Command* cmd) {
+    int i;
+    for (i = 0; i < 100; i++) {
+        cmd->args[i] = NULL;
     }
 
-    return num;
+    cmd->argc = 0;
+    cmd->run_in_background = 0;
+    cmd->pid = 0;
+    cmd->redirect_stdout = NULL;
+    cmd->redirect_append_stdout = NULL;
+    cmd->redirect_stdin = NULL;
+    cmd->pipe_input = NULL;
+    cmd->pipe_output = NULL;
+    cmd->pipe_in_fd = 0;
+    cmd->pipe_out_fd = 0;
 }
 
 /**
@@ -118,13 +128,7 @@ int scan_redirects(IS is, int current_index, Command* cmd) {
 int scan_next_cmd(IS is, int current_index, Command* cmd) {
     int i;
 
-    cmd->redirect_stdin = NULL;
-    cmd->redirect_stdout = NULL;
-    cmd->redirect_append_stdout = NULL;
-    cmd->pipe_input = NULL;
-    cmd->pipe_output = NULL;
-    cmd->completed = 0;
-    cmd->run_in_background = 0;
+    command_clear(cmd);
 
     for (i = current_index; i < is->NF; i++) {
         char* field = is->fields[i];
@@ -153,6 +157,33 @@ int scan_next_cmd(IS is, int current_index, Command* cmd) {
     }
 
     return -2;
+}
+
+/**
+ * Free the command and all of its pipes
+ * 
+ * @param cmd The command
+ */
+void free_cmd(Command* cmd) {
+    int i;
+    int count = 0;
+
+    Command* c = cmd;
+    while (c != NULL) {
+        Command* nc = c->pipe_output;
+
+        if (c->redirect_stdout)         free(c->redirect_stdout);
+        if (c->redirect_append_stdout)  free(c->redirect_append_stdout);
+        if (c->redirect_stdin)          free(c->redirect_stdin);
+        for (i = 0; i < c->argc; i++) {
+            free(c->args[i]);
+        }
+
+        if (count) free(c);
+
+        c = nc;
+        count++;
+    }
 }
 
 /**
@@ -203,7 +234,7 @@ Command* get_cmd(IS is) {
 void execute(Command* cmd) {
     if (cmd->pipe_input != NULL) {
         if (dup2(cmd->pipe_in_fd, 0) != 0) {   
-            perror("headsort: dup2(cmd->pipe_in_fd)");
+            perror("jsh: dup2(cmd->pipe_in_fd)");
             exit(1);
         }
     }
@@ -301,131 +332,9 @@ void run(Command* cmd) {
         c = c->pipe_output;
         i++;
     }
+
+    free_cmd(cmd);
 }
-
-/*void run_command(Command* cmd) {
-    int s1, s2;
-    int pipefd[2];
-
-    // Create pipe if necessary
-    if (cmd->pipe_output != NULL) {
-        if (pipe(pipefd) < 0) {
-            perror("jsh: pipe");
-            exit(1);
-        }
-    }
-
-    fflush(stdout);
-    fflush(stderr);
-
-    // First child process
-    if (cmd->pid > 0 || (cmd->pid = fork()) == 0) {
-        if (cmd->redirect_stdin != NULL) {
-            int fd = open(cmd->redirect_stdin, O_RDONLY);
-            if (fd < 0) {
-                perror("jsh: redirect stdin");
-                exit(1);
-            }
-
-            if (dup2(fd, 0) != 0) {
-                perror("jsh: dup2(fd, 0)");
-                exit(1);
-            }
-            close(fd);
-        }
-        
-        if (cmd->redirect_stdout != NULL) {
-            int fd = open(cmd->redirect_stdout, O_WRONLY | O_TRUNC | O_CREAT, 0644);
-            if (fd < 0) {
-                perror("jsh: redirect stdin");
-                exit(1);
-            }
-
-            if (dup2(fd, 1) != 1) {
-                perror("jsh: dup2(fd, 1)");
-                exit(1);
-            }
-            close(fd);
-        }
-        
-        if (cmd->redirect_append_stdout != NULL) {
-            int fd = open(cmd->redirect_append_stdout, O_WRONLY | O_APPEND | O_CREAT, 0644);
-            if (fd < 0) {
-                perror("jsh: redirect stdin");
-                exit(1);
-            }
-
-            if (dup2(fd, 1) != 1) {
-                perror("jsh: dup2(fd, 1)");
-                exit(1);
-            }
-            close(fd);
-        }
-        
-        if (cmd->pipe_output != NULL) {
-            if (dup2(pipefd[1], 1) != 1) {
-                perror("jsh: dup2(pipefd[1])");
-                exit(1);
-            }
-
-            close(pipefd[1]);
-            close(pipefd[0]);
-        }
-
-        execvp(cmd->args[0], cmd->args);
-        perror(cmd->args[0]);
-        exit(1);
-
-    // Second child (pipe)
-    } else if (cmd->pipe_output != NULL && (cmd->pipe_output->pid = fork()) == 0) {
-        if (dup2(pipefd[0], 0) != 0) {   
-            perror("jsh: dup2(pipefd[0])");
-            exit(1);
-        }
-
-        close(pipefd[1]);
-        close(pipefd[0]);
-
-        run_command(cmd->pipe_output);
-
-    // Parent process
-    } else if(cmd->pid > 0) {
-        // pid_t pid;
-
-        // if (!cmd->completed && !cmd->run_in_background) {
-        //     while (1) {
-        //         pid = wait(&s1);
-
-        //         if (cmd->pid == pid) {
-        //             cmd->completed = 1;
-        //             break;
-        //         }
-
-        //         if (cmd->pipe_output != NULL && cmd->pipe_output->pid == pid)
-        //             cmd->pipe_output->completed = 1;
-        //     }
-        // }
-
-        // if (cmd->pipe_output != NULL && !cmd->pipe_output->run_in_background && !cmd->pipe_output->completed) {
-        //     while (1) {
-        //         pid = wait(&s1);
-
-        //         if (cmd->pipe_output != NULL && cmd->pipe_output->pid == pid) {
-        //             cmd->pipe_output->completed = 1;
-        //             break;
-        //         }
-        //     }
-        // }
-
-        if (cmd->run_in_background) {
-            cmd->completed = 1;
-            return;
-        }
-
-        while(wait(&s1) != cmd->pid);
-        cmd->completed = 1;
-    }
-}*/
 
 int main(int argc, char **argv, char **envp) {
     char prompt[100];
