@@ -23,6 +23,7 @@ typedef struct cmd {
     char* args[100];
     int argc;
     int run_in_background;
+    int completed;
     pid_t pid;
     char* redirect_stdout;
     char* redirect_append_stdout;
@@ -47,6 +48,7 @@ void command_clear(Command* cmd) {
 
     cmd->argc = 0;
     cmd->run_in_background = 0;
+    cmd->completed = 0;
     cmd->pid = 0;
     cmd->redirect_stdout = NULL;
     cmd->redirect_append_stdout = NULL;
@@ -55,6 +57,42 @@ void command_clear(Command* cmd) {
     cmd->pipe_output = NULL;
     cmd->pipe_in_fd = 0;
     cmd->pipe_out_fd = 0;
+}
+
+/**
+ * Check if the command is still running
+ * 
+ * @param cmd The command to check
+ * @return int 1 if the command is still running, 0 if not
+ */
+int is_waiting(Command* cmd) {
+    if (!cmd->completed) return 1;
+
+    Command* c = cmd->pipe_output;
+    while (c != NULL) {
+        if (!c->completed) return 1;
+        c = c->pipe_output;
+    }
+
+    return 0;
+}
+
+/**
+ * Set the given pid as completed
+ * 
+ * @param head The head command
+ * @param pid The pid to set as completed
+ */
+void set_completed(Command* head, pid_t pid) {
+    Command* c = head;
+    while (c != NULL) {
+        if (c->pid == pid) {
+            c->completed = 1;
+            return;
+        }
+
+        c = c->pipe_output;
+    }
 }
 
 /**
@@ -323,17 +361,11 @@ void run(Command* cmd) {
         } else {
             if (c->pipe_in_fd)  close(c->pipe_in_fd);
             if (c->pipe_out_fd) close(c->pipe_out_fd);
-
-            if (c->run_in_background) return;
-
-            while (wait(NULL) != c->pid);
         }
 
         c = c->pipe_output;
         i++;
     }
-
-    free_cmd(cmd);
 }
 
 int main(int argc, char **argv, char **envp) {
@@ -378,6 +410,12 @@ int main(int argc, char **argv, char **envp) {
         cmd = get_cmd(is);
         
         run(cmd);
+
+        while (is_waiting(cmd)) {
+            set_completed(cmd, wait(NULL));
+        }
+
+        free_cmd(cmd);
     }
 
     jettison_inputstruct(is);
