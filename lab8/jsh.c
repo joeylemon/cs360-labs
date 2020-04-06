@@ -28,8 +28,24 @@ typedef struct cmd {
     char* redirect_stdout;
     char* redirect_append_stdout;
     char* redirect_stdin;
+    struct cmd *pipe_input;
     struct cmd *pipe_output;
+
+    int pipe_in_fd;
+    int pipe_out_fd;
 } Command;
+
+int get_num_cmds(Command* cmd) {
+    int num = 1;
+
+    Command* c = cmd->pipe_output;
+    while (c != NULL) {
+        num++;
+        c = c->pipe_output;
+    }
+
+    return num;
+}
 
 /**
  * Check if a string is a token for redirection
@@ -105,8 +121,9 @@ int scan_next_cmd(IS is, int current_index, Command* cmd) {
     cmd->redirect_stdin = NULL;
     cmd->redirect_stdout = NULL;
     cmd->redirect_append_stdout = NULL;
+    cmd->pipe_input = NULL;
     cmd->pipe_output = NULL;
-    cmd->completed = 1;
+    cmd->completed = 0;
     cmd->run_in_background = 0;
 
     for (i = current_index; i < is->NF; i++) {
@@ -163,8 +180,10 @@ Command* get_cmd(IS is) {
             head = new_cmd;
 
         if (new_cmd->argc > 0) {
-            if (cmd != NULL)
+            if (cmd != NULL) {
                 cmd->pipe_output = new_cmd;
+                new_cmd->pipe_input = cmd;
+            }
 
             cmd = new_cmd;
         } else {
@@ -182,6 +201,23 @@ Command* get_cmd(IS is) {
 }
 
 void execute(Command* cmd) {
+    if (cmd->pipe_input != NULL) {
+        if (dup2(cmd->pipe_in_fd, 0) != 0) {   
+            perror("headsort: dup2(cmd->pipe_in_fd)");
+            exit(1);
+        }
+    }
+
+    if (cmd->pipe_output != NULL) {
+        if (dup2(cmd->pipe_out_fd, 1) != 1) {
+            perror("jsh: dup2(cmd->pipe_out_fd)");
+            exit(1);
+        }
+    }
+
+    if (cmd->pipe_in_fd)    close(cmd->pipe_in_fd);
+    if (cmd->pipe_out_fd)   close(cmd->pipe_out_fd);
+
     if (cmd->redirect_stdin != NULL) {
         int fd = open(cmd->redirect_stdin, O_RDONLY);
         if (fd < 0) {
@@ -230,20 +266,40 @@ void execute(Command* cmd) {
 }
 
 void run(Command* cmd) {
-    cmd->pid = fork();
+    int i = 0;
+    Command* c = cmd;
 
-    // Child process
-    if (cmd->pid == 0) {
+    while (c != NULL) {
+        if (c->pipe_output != NULL) {
+            int pipefd[2];
+            if (pipe(pipefd) < 0) {
+                perror("jsh: pipe");
+                exit(1);
+            }
+            
+            c->pipe_out_fd = pipefd[1];
+            c->pipe_output->pipe_in_fd = pipefd[0];
+        }
 
-        execute(cmd);
+        c->pid = fork();
 
-    // Parent process
-    } else {
+        // Child process
+        if (c->pid == 0) {
 
-        if (cmd->run_in_background) return;
+            execute(c);
 
-        while (wait(NULL) != cmd->pid);
+        // Parent process
+        } else {
+            if (c->pipe_in_fd)  close(c->pipe_in_fd);
+            if (c->pipe_out_fd) close(c->pipe_out_fd);
 
+            if (c->run_in_background) return;
+
+            while (wait(NULL) != c->pid);
+        }
+
+        c = c->pipe_output;
+        i++;
     }
 }
 
