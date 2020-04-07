@@ -36,6 +36,150 @@ typedef struct cmd {
  * 
  * @param cmd The command to clear
  */
+void command_clear(Command* cmd);
+
+/**
+ * Check if the command is still running
+ * 
+ * @param cmd The first command in the chain of pipes
+ * @return int 1 if the command is still running, 0 if not
+ */
+int is_waiting(Command* cmd);
+
+/**
+ * Set the given pid as completed
+ * 
+ * @param cmd The first command in the chain of pipes
+ * @param pid The pid to set as completed
+ */
+void set_completed(Command* cmd, pid_t pid);
+
+/**
+ * Check if a string is a token for redirection
+ * 
+ * @param str The string
+ * @return int 1 if the string is a token, 0 if not
+ */
+int is_token(char* str);
+
+/**
+ * Scan the next redirect for the given command
+ * 
+ * @param is The input struct
+ * @param current_index The current index into the field array
+ * @param cmd The command to scan into
+ * @param token The token to match against
+ * @return int 1 if a redirection was scanned, 0 if not
+ */
+int scan_next_redirect(IS is, int current_index, Command* cmd, char* token);
+
+/**
+ * Scan all redirects for the given command
+ * 
+ * @param is The input struct
+ * @param current_index The current index into the field array
+ * @param cmd The command to scan into
+ * @return int The index where the next command's fields begin
+ */
+int scan_redirects(IS is, int current_index, Command* cmd);
+
+/**
+ * Scan the next command
+ * 
+ * @param is The input struct
+ * @param current_index The current index into the field array
+ * @param cmd The command to scan into
+ * @return int -1 if we've reached the end of all commands, -2 if nothing was scanned, otherwise, the index
+ *             where the next command's fields begin
+ */
+int scan_next_cmd(IS is, int current_index, Command* cmd);
+
+/**
+ * Scan the entire line of input into commands
+ * 
+ * @param is The input struct
+ * @return Command* The first command to execute in the chain of pipes
+ */
+Command* scan_cmd(IS is);
+
+/**
+ * Free the command and all of its pipes
+ * 
+ * @param cmd The first command in the chain of pipes
+ */
+void free_cmd(Command* cmd);
+
+/**
+ * Redirects all stdin and stdout and then performs the command using execvp
+ * 
+ * @param cmd The command to execute
+ */
+void execute(Command* cmd);
+
+/**
+ * Runs the given command and all subsequent pipes
+ * 
+ * @param cmd The first command in the chain of pipes
+ */
+void run(Command* cmd);
+
+int main(int argc, char **argv, char **envp) {
+    char prompt[100];
+
+    // Determine which prompt to use
+    switch (argc) {
+    case 1:
+        // Default to jsh prompt
+        strcpy(prompt, "jsh: ");
+        break;
+
+    case 2:
+        // Don't print a prompt if user specified '-'
+        if (strcmp(argv[1], "-") == 0) {
+            strcpy(prompt, "");
+            break;
+        }
+
+        strcpy(prompt, argv[1]);
+        break;
+
+    default:
+        // User specified improper arguments
+        fprintf(stderr, "usage: %s [prompt]\n", argv[0]);
+        exit(1);
+    }
+
+    Command* cmd = NULL;
+    IS is = new_inputstruct(NULL);
+
+    while (1) {
+        // Print the prompt
+        printf("%s", prompt);
+
+        // Get the input from the prompt
+        if (get_line(is) < 0) break;
+
+        // Skip empty commands
+        if (is->NF == 0) continue;
+
+        cmd = scan_cmd(is);
+        
+        run(cmd);
+
+        // Don't print the next prompt until all commands are done
+        while (is_waiting(cmd)) {
+            pid_t pid = wait(NULL);
+            set_completed(cmd, pid);
+        }
+
+        free_cmd(cmd);
+    }
+
+    jettison_inputstruct(is);
+
+    return 0;
+}
+
 void command_clear(Command* cmd) {
     int i;
     for (i = 0; i < 100; i++) {
@@ -55,12 +199,6 @@ void command_clear(Command* cmd) {
     cmd->pipe_out_fd = 0;
 }
 
-/**
- * Check if the command is still running
- * 
- * @param cmd The first command in the chain of pipes
- * @return int 1 if the command is still running, 0 if not
- */
 int is_waiting(Command* cmd) {
     if (!cmd->completed) return 1;
 
@@ -73,45 +211,23 @@ int is_waiting(Command* cmd) {
     return 0;
 }
 
-/**
- * Set the given pid as completed
- * 
- * @param head The first command in the chain of pipes
- * @param pid The pid to set as completed
- */
-void set_completed(Command* head, pid_t pid) {
-    Command* c = head;
-    while (c != NULL) {
-        if (c->pid == pid) {
-            c->completed = 1;
+void set_completed(Command* cmd, pid_t pid) {
+    while (cmd != NULL) {
+        if (cmd->pid == pid) {
+            cmd->completed = 1;
             return;
         }
 
-        c = c->pipe_output;
+        cmd = cmd->pipe_output;
     }
 }
 
-/**
- * Check if a string is a token for redirection
- * 
- * @param str The string
- * @return int 1 if the string is a token, 0 if not
- */
 int is_token(char* str) {
     return strcmp(str, ">") == 0 || 
            strcmp(str, "<") == 0 || 
            strcmp(str, ">>") == 0;
 }
 
-/**
- * Scan the next redirect for the given command
- * 
- * @param is The input struct
- * @param current_index The current index into the field array
- * @param cmd The command to scan into
- * @param token The token to match against
- * @return int 1 if a redirection was scanned, 0 if not
- */
 int scan_next_redirect(IS is, int current_index, Command* cmd, char* token) {
     if (strcmp(token, "<") == 0) {
         cmd->redirect_stdin = strdup(is->fields[current_index + 1]);
@@ -126,39 +242,21 @@ int scan_next_redirect(IS is, int current_index, Command* cmd, char* token) {
     return 1;
 }
 
-/**
- * Scan all redirects for the given command
- * 
- * @param is The input struct
- * @param current_index The current index into the field array
- * @param cmd The command to scan into
- * @return int The index where the next command's fields begin
- */
 int scan_redirects(IS is, int current_index, Command* cmd) {
-    int i = current_index;
     int result = 1;
 
     while (result) {
-        result = scan_next_redirect(is, i, cmd, is->fields[i]);
-        if (result) i += 2;
+        result = scan_next_redirect(is, current_index, cmd, is->fields[current_index]);
+        if (result) current_index += 2;
     }
 
     // Since we've scanned all the redirects, check if there's a background flag as well
-    if (i < is->NF && strcmp(is->fields[i], "&") == 0)
+    if (current_index < is->NF && strcmp(is->fields[current_index], "&") == 0)
         cmd->run_in_background = 1;
 
-    return i;
+    return current_index;
 }
 
-/**
- * Scan the next command
- * 
- * @param is The input struct
- * @param current_index The current index into the field array
- * @param cmd The command to scan into
- * @return int -1 if we've reached the end of all commands, -2 if nothing was scanned, otherwise, the index
- *             where the next command's fields begin
- */
 int scan_next_cmd(IS is, int current_index, Command* cmd) {
     int i;
 
@@ -193,42 +291,7 @@ int scan_next_cmd(IS is, int current_index, Command* cmd) {
     return -2;
 }
 
-/**
- * Free the command and all of its pipes
- * 
- * @param cmd The first command in the chain of pipes
- */
-void free_cmd(Command* cmd) {
-    int i;
-
-    Command* c = cmd;
-    while (c != NULL) {
-        Command* nc = c->pipe_output;
-
-        // Free all file names
-        if (c->redirect_stdout)         free(c->redirect_stdout);
-        if (c->redirect_append_stdout)  free(c->redirect_append_stdout);
-        if (c->redirect_stdin)          free(c->redirect_stdin);
-
-        // Free all arguments
-        for (i = 0; i < c->argc; i++) {
-            free(c->args[i]);
-        }
-
-        // Finally, free the command struct
-        free(c);
-
-        c = nc;
-    }
-}
-
-/**
- * Scan the entire line of input into commands
- * 
- * @param is The input struct
- * @return Command* The first command to execute
- */
-Command* get_cmd(IS is) {
+Command* scan_cmd(IS is) {
     int i = 0;
 
     Command* head = NULL;
@@ -246,33 +309,46 @@ Command* get_cmd(IS is) {
         if (head == NULL)
             head = new_cmd;
 
-        if (new_cmd->argc > 0) {
-            // Add pipe reference between previous command and the new command
-            if (cmd != NULL) {
-                cmd->pipe_output = new_cmd;
-                new_cmd->pipe_input = cmd;
-            }
-
-            cmd = new_cmd;
-        } else {
-            free(new_cmd);
-        }
-
-        // If nothing was scanned
-        if (i == -2) {
+        if (i == -2 || new_cmd->argc == 0) {
             free(new_cmd);
             break;
         }
+
+        // Add pipe reference between previous command and the new command
+        if (cmd != NULL) {
+            cmd->pipe_output = new_cmd;
+            new_cmd->pipe_input = cmd;
+        }
+
+        cmd = new_cmd;
     }
 
     return head;
 }
 
-/**
- * Redirects all stdin and stdout and then performs the command using execvp
- * 
- * @param cmd The command to execute
- */
+void free_cmd(Command* cmd) {
+    int i;
+
+    while (cmd != NULL) {
+        Command* nc = cmd->pipe_output;
+
+        // Free all file names
+        if (cmd->redirect_stdout)         free(cmd->redirect_stdout);
+        if (cmd->redirect_append_stdout)  free(cmd->redirect_append_stdout);
+        if (cmd->redirect_stdin)          free(cmd->redirect_stdin);
+
+        // Free all arguments
+        for (i = 0; i < cmd->argc; i++) {
+            free(cmd->args[i]);
+        }
+
+        // Finally, free the command struct
+        free(cmd);
+
+        cmd = nc;
+    }
+}
+
 void execute(Command* cmd) {
     // Redirect stdin from pipe
     if (cmd->pipe_input != NULL) {
@@ -345,104 +421,38 @@ void execute(Command* cmd) {
     exit(1);
 }
 
-/**
- * Runs the given command and all subsequent pipes
- * 
- * @param cmd The first command in the chain of pipes
- */
 void run(Command* cmd) {
-    int i = 0;
-    Command* c = cmd;
-
-    while (c != NULL) {
+    while (cmd != NULL) {
         // Open a pipe between this command and the next command
-        if (c->pipe_output != NULL) {
+        if (cmd->pipe_output != NULL) {
             int pipefd[2];
             if (pipe(pipefd) < 0) {
                 perror("jsh: pipe");
                 exit(1);
             }
             
-            c->pipe_out_fd = pipefd[1];
-            c->pipe_output->pipe_in_fd = pipefd[0];
+            cmd->pipe_out_fd = pipefd[1];
+            cmd->pipe_output->pipe_in_fd = pipefd[0];
         }
 
         fflush(stdout);
         fflush(stderr);
 
         // Fork a child
-        c->pid = fork();
+        cmd->pid = fork();
 
         // Child process
-        if (c->pid == 0) {
-            execute(c);
+        if (cmd->pid == 0) {
+            execute(cmd);
 
         // Parent process
         } else {
-            if (c->pipe_in_fd)  close(c->pipe_in_fd);
-            if (c->pipe_out_fd) close(c->pipe_out_fd);
+            if (cmd->pipe_in_fd)  close(cmd->pipe_in_fd);
+            if (cmd->pipe_out_fd) close(cmd->pipe_out_fd);
 
-            if (c->run_in_background) c->completed = 1;
+            if (cmd->run_in_background) cmd->completed = 1;
         }
 
-        c = c->pipe_output;
-        i++;
+        cmd = cmd->pipe_output;
     }
-}
-
-int main(int argc, char **argv, char **envp) {
-    char prompt[100];
-
-    // Determine which prompt to use
-    switch (argc) {
-    case 1:
-        // Default to jsh prompt
-        strcpy(prompt, "jsh: ");
-        break;
-
-    case 2:
-        // Don't print a prompt if user specified '-'
-        if (strcmp(argv[1], "-") == 0) {
-            strcpy(prompt, "");
-            break;
-        }
-
-        strcpy(prompt, argv[1]);
-        break;
-
-    default:
-        // User specified improper arguments
-        fprintf(stderr, "usage: %s [prompt]\n", argv[0]);
-        exit(1);
-    }
-
-    Command* cmd = NULL;
-    IS is = new_inputstruct(NULL);
-
-    while (1) {
-        // Print the prompt
-        printf("%s", prompt);
-
-        // Get the input from the prompt
-        if (get_line(is) < 0) break;
-
-        // Skip empty commands
-        if (is->NF == 0) continue;
-
-        cmd = get_cmd(is);
-        
-        run(cmd);
-
-        // Don't print the next prompt until all commands are done
-        while (is_waiting(cmd)) {
-            pid_t pid = wait(NULL);
-            set_completed(cmd, pid);
-        }
-
-        free_cmd(cmd);
-    }
-
-    jettison_inputstruct(is);
-
-    return 0;
 }
