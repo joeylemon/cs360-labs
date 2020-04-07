@@ -422,6 +422,9 @@ void execute(Command* cmd) {
 }
 
 void run(Command* cmd) {
+    // Exit jsh when user enters "exit"
+    if (strcmp(cmd->args[0], "exit") == 0) exit(0);
+
     while (cmd != NULL) {
         // Open a pipe between this command and the next command
         if (cmd->pipe_output != NULL) {
