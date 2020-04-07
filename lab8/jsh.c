@@ -361,6 +361,8 @@ void run(Command* cmd) {
         } else {
             if (c->pipe_in_fd)  close(c->pipe_in_fd);
             if (c->pipe_out_fd) close(c->pipe_out_fd);
+
+            if (c->run_in_background) c->completed = 1;
         }
 
         c = c->pipe_output;
@@ -412,7 +414,8 @@ int main(int argc, char **argv, char **envp) {
         run(cmd);
 
         while (is_waiting(cmd)) {
-            set_completed(cmd, wait(NULL));
+            pid_t pid = wait(NULL);
+            set_completed(cmd, pid);
         }
 
         free_cmd(cmd);
