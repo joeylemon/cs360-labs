@@ -14,10 +14,6 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include "fields.h"
-#include "jrb.h"
-#include "dllist.h"
-
-#define streq(str1, str2) strcmp(str1, str2) == 0
 
 typedef struct cmd {
     char* args[100];
@@ -209,13 +205,17 @@ void free_cmd(Command* cmd) {
     while (c != NULL) {
         Command* nc = c->pipe_output;
 
+        // Free all file names
         if (c->redirect_stdout)         free(c->redirect_stdout);
         if (c->redirect_append_stdout)  free(c->redirect_append_stdout);
         if (c->redirect_stdin)          free(c->redirect_stdin);
+
+        // Free all arguments
         for (i = 0; i < c->argc; i++) {
             free(c->args[i]);
         }
 
+        // Finally, free the command struct
         free(c);
 
         c = nc;
@@ -247,6 +247,7 @@ Command* get_cmd(IS is) {
             head = new_cmd;
 
         if (new_cmd->argc > 0) {
+            // Add pipe reference between previous command and the new command
             if (cmd != NULL) {
                 cmd->pipe_output = new_cmd;
                 new_cmd->pipe_input = cmd;
@@ -267,7 +268,13 @@ Command* get_cmd(IS is) {
     return head;
 }
 
+/**
+ * Redirects all stdin and stdout and then performs the command using execvp
+ * 
+ * @param cmd The command to execute
+ */
 void execute(Command* cmd) {
+    // Redirect stdin from pipe
     if (cmd->pipe_input != NULL) {
         if (dup2(cmd->pipe_in_fd, 0) != 0) {   
             perror("jsh: dup2(cmd->pipe_in_fd)");
@@ -275,6 +282,7 @@ void execute(Command* cmd) {
         }
     }
 
+    // Redirect stdout to pipe
     if (cmd->pipe_output != NULL) {
         if (dup2(cmd->pipe_out_fd, 1) != 1) {
             perror("jsh: dup2(cmd->pipe_out_fd)");
@@ -282,9 +290,11 @@ void execute(Command* cmd) {
         }
     }
 
+    // Close pipes
     if (cmd->pipe_in_fd)    close(cmd->pipe_in_fd);
     if (cmd->pipe_out_fd)   close(cmd->pipe_out_fd);
 
+    // Redirect stdin from given file
     if (cmd->redirect_stdin != NULL) {
         int fd = open(cmd->redirect_stdin, O_RDONLY);
         if (fd < 0) {
@@ -299,6 +309,7 @@ void execute(Command* cmd) {
         close(fd);
     }
 
+    // Redirect stdout to given file
     if (cmd->redirect_stdout != NULL) {
         int fd = open(cmd->redirect_stdout, O_WRONLY | O_TRUNC | O_CREAT, 0644);
         if (fd < 0) {
@@ -313,6 +324,7 @@ void execute(Command* cmd) {
         close(fd);
     }
 
+    // Redirect stdout to given file, open in append mode
     if (cmd->redirect_append_stdout != NULL) {
         int fd = open(cmd->redirect_append_stdout, O_WRONLY | O_APPEND | O_CREAT, 0644);
         if (fd < 0) {
@@ -327,16 +339,23 @@ void execute(Command* cmd) {
         close(fd);
     }
 
+    // Execute the command
     execvp(cmd->args[0], cmd->args);
     perror(cmd->args[0]);
     exit(1);
 }
 
+/**
+ * Runs the given command and all subsequent pipes
+ * 
+ * @param cmd The first command in the chain of pipes
+ */
 void run(Command* cmd) {
     int i = 0;
     Command* c = cmd;
 
     while (c != NULL) {
+        // Open a pipe between this command and the next command
         if (c->pipe_output != NULL) {
             int pipefd[2];
             if (pipe(pipefd) < 0) {
@@ -348,11 +367,14 @@ void run(Command* cmd) {
             c->pipe_output->pipe_in_fd = pipefd[0];
         }
 
+        fflush(stdout);
+        fflush(stderr);
+
+        // Fork a child
         c->pid = fork();
 
         // Child process
         if (c->pid == 0) {
-
             execute(c);
 
         // Parent process
@@ -411,6 +433,7 @@ int main(int argc, char **argv, char **envp) {
         
         run(cmd);
 
+        // Don't print the next prompt until all commands are done
         while (is_waiting(cmd)) {
             pid_t pid = wait(NULL);
             set_completed(cmd, pid);
