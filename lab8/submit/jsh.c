@@ -204,7 +204,6 @@ int scan_next_cmd(IS is, int current_index, Command* cmd) {
  */
 void free_cmd(Command* cmd) {
     int i;
-    int count = 0;
 
     Command* c = cmd;
     while (c != NULL) {
@@ -217,10 +216,9 @@ void free_cmd(Command* cmd) {
             free(c->args[i]);
         }
 
-        if (count) free(c);
+        free(c);
 
         c = nc;
-        count++;
     }
 }
 
