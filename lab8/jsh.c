@@ -58,7 +58,7 @@ void command_clear(Command* cmd) {
 /**
  * Check if the command is still running
  * 
- * @param cmd The command to check
+ * @param cmd The first command in the chain of pipes
  * @return int 1 if the command is still running, 0 if not
  */
 int is_waiting(Command* cmd) {
@@ -76,7 +76,7 @@ int is_waiting(Command* cmd) {
 /**
  * Set the given pid as completed
  * 
- * @param head The head command
+ * @param head The first command in the chain of pipes
  * @param pid The pid to set as completed
  */
 void set_completed(Command* head, pid_t pid) {
@@ -196,7 +196,7 @@ int scan_next_cmd(IS is, int current_index, Command* cmd) {
 /**
  * Free the command and all of its pipes
  * 
- * @param cmd The command
+ * @param cmd The first command in the chain of pipes
  */
 void free_cmd(Command* cmd) {
     int i;
