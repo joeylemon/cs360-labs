@@ -162,14 +162,11 @@ int main(int argc, char **argv, char **envp) {
         if (is->NF == 0) continue;
 
         Command* cmd = scan_cmd(is);
-        
         run(cmd);
 
         // Don't print the next prompt until all commands are done
-        while (is_waiting(cmd)) {
-            pid_t pid = wait(NULL);
-            set_completed(cmd, pid);
-        }
+        while (is_waiting(cmd))
+            set_completed(cmd, wait(NULL));
 
         free_cmd(cmd);
     }
@@ -199,19 +196,19 @@ void command_clear(Command* cmd) {
 }
 
 int is_waiting(Command* cmd) {
-    if (!cmd->completed) return 1;
-
-    Command* c = cmd->pipe_output;
-    while (c != NULL) {
-        if (!c->completed) return 1;
-        c = c->pipe_output;
+    // Loop through all commands in the pipe chain
+    while (cmd != NULL) {
+        if (!cmd->completed) return 1;
+        cmd = cmd->pipe_output;
     }
 
     return 0;
 }
 
 void set_completed(Command* cmd, pid_t pid) {
+    // Loop through all commands in the pipe chain
     while (cmd != NULL) {
+        // Find the command with the given pid
         if (cmd->pid == pid) {
             cmd->completed = 1;
             return;
@@ -244,8 +241,11 @@ int scan_next_redirect(IS is, int current_index, Command* cmd, char* token) {
 int scan_redirects(IS is, int current_index, Command* cmd) {
     int result = 1;
 
+    // Continously loop until we've read in all redirections for the command
     while (result) {
         result = scan_next_redirect(is, current_index, cmd, is->fields[current_index]);
+
+        // If the scan worked, move two fields forward to search for another potential redirection
         if (result) current_index += 2;
     }
 
@@ -308,6 +308,7 @@ Command* scan_cmd(IS is) {
         if (head == NULL)
             head = new_cmd;
 
+        // If a command couldn't be scanned, we have reached the end of the pipe chain
         if (i == -2 || new_cmd->argc == 0) {
             free(new_cmd);
             break;
@@ -328,6 +329,7 @@ Command* scan_cmd(IS is) {
 void free_cmd(Command* cmd) {
     int i;
 
+    // Loop through all commands in the pipe chain
     while (cmd != NULL) {
         Command* nc = cmd->pipe_output;
 
@@ -429,6 +431,7 @@ void run(Command* cmd) {
     // Exit jsh when user enters "exit"
     if (strcmp(cmd->args[0], "exit") == 0) exit(0);
 
+    // Loop through all commands in the pipe chain
     while (cmd != NULL) {
         // Open a pipe between this command and the next command
         if (cmd->pipe_output != NULL) {
