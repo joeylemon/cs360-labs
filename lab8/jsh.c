@@ -149,7 +149,6 @@ int main(int argc, char **argv, char **envp) {
         exit(1);
     }
 
-    Command* cmd = NULL;
     IS is = new_inputstruct(NULL);
 
     while (1) {
@@ -162,7 +161,7 @@ int main(int argc, char **argv, char **envp) {
         // Skip empty commands
         if (is->NF == 0) continue;
 
-        cmd = scan_cmd(is);
+        Command* cmd = scan_cmd(is);
         
         run(cmd);
 

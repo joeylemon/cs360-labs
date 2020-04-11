@@ -17,4 +17,4 @@ jsh: jsh.o
 #make clean will rid your directory of the executable,
 #object files, and any core dumps you've caused
 clean:
-	rm -rf core $(EXECUTABLES) *.o
+	rm -rf core $(EXECUTABLES) *.o tmp*.txt f*.txt
