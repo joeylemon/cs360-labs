@@ -330,11 +330,6 @@ Command* scan_cmd(IS is) {
 }
 
 void free_cmd(Command* cmd) {
-    int i;
-    for (i = 3; i < 64; i++) {
-        close(i);
-    }
-
     // Loop through all commands in the pipe chain
     while (cmd != NULL) {
         Command* nc = cmd->pipe_output;
@@ -434,11 +429,6 @@ void execute(Command* cmd) {
 }
 
 void run(Command* cmd) {
-    int i;
-    for (i = 3; i < 64; i++) {
-        close(i);
-    }
-
     // Exit jsh when user enters "exit"
     if (strcmp(cmd->args[0], "exit") == 0) exit(0);
 
