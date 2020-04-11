@@ -340,6 +340,7 @@ void free_cmd(Command* cmd) {
         if (cmd->redirect_stdin)          free(cmd->redirect_stdin);
 
         // Free all arguments
+        int i;
         for (i = 0; i < cmd->argc; i++) {
             free(cmd->args[i]);
         }
