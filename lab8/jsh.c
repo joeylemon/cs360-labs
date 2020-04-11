@@ -291,11 +291,6 @@ int scan_next_cmd(IS is, int current_index, Command* cmd) {
 }
 
 Command* scan_cmd(IS is) {
-    int j;
-    for (j = 3; j < 64; j++) {
-        close(j);
-    }
-
     int i = 0;
 
     Command* head = NULL;
@@ -332,10 +327,6 @@ Command* scan_cmd(IS is) {
 
 void free_cmd(Command* cmd) {
     int i;
-
-    for (i = 3; i < 64; i++) {
-        close(i);
-    }
 
     while (cmd != NULL) {
         Command* nc = cmd->pipe_output;
