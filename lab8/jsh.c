@@ -308,10 +308,13 @@ Command* scan_cmd(IS is) {
         if (head == NULL)
             head = new_cmd;
 
-        // If a command couldn't be scanned, we have reached the end of the pipe chain
+        // If a command wasn't scanned, free the memory
         if (i == -2 || new_cmd->argc == 0) {
             free(new_cmd);
-            break;
+
+            // If the return value was -2, we've reached the end of the pipe chain
+            if (i == -2) break;
+            else continue;
         }
 
         // Add pipe reference between previous command and the new command
@@ -328,6 +331,9 @@ Command* scan_cmd(IS is) {
 
 void free_cmd(Command* cmd) {
     int i;
+    for (i = 3; i < 64; i++) {
+        close(i);
+    }
 
     // Loop through all commands in the pipe chain
     while (cmd != NULL) {
@@ -428,6 +434,11 @@ void execute(Command* cmd) {
 }
 
 void run(Command* cmd) {
+    int i;
+    for (i = 3; i < 64; i++) {
+        close(i);
+    }
+
     // Exit jsh when user enters "exit"
     if (strcmp(cmd->args[0], "exit") == 0) exit(0);
 
