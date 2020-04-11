@@ -423,6 +423,11 @@ void execute(Command* cmd) {
         close(fd);
     }
 
+    int i;
+    for (i = 3; i < 64; i++) {
+        close(i);
+    }
+
     // Execute the command
     execvp(cmd->args[0], cmd->args);
     perror(cmd->args[0]);
