@@ -3,6 +3,8 @@
         "typeinfo": "c",
         "stat.h": "c",
         "mymalloc.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "sockettome.h": "c",
+        "pthread.h": "c"
     }
 }
