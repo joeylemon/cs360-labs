@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <signal.h>
 #include "dllist.h"
 #include "jrb.h"
 #include "sockettome.h"
@@ -30,7 +31,6 @@ typedef struct room {
 } Room;
 
 typedef struct client {
-    Server* server;
     Room* chat_room;
     pthread_t tid;
 
@@ -39,6 +39,8 @@ typedef struct client {
     char name[100];
     int fd;
 } Client;
+
+Server* server;
 
 /**
  * The function that runs room threads
@@ -85,6 +87,8 @@ void free_client(Client* client);
  */
 void free_room(Room* room);
 
+void stop_server(int dummy);
+
 int main(int argc, char **argv) {
     // Command line checking
     if (argc < 3) {
@@ -92,8 +96,10 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
+    signal(SIGINT, stop_server);
+
     // Set up a shared info struct
-    Server* server = (Server*) malloc(sizeof(Server));
+    server = (Server*) malloc(sizeof(Server));
     server->chat_rooms = make_jrb();
 
     // Allocate each room given in the arguments list
@@ -128,7 +134,6 @@ int main(int argc, char **argv) {
     while (1) {
         int fd = accept_connection(socket);
         Client* client = (Client*) malloc(sizeof(Client));
-        client->server = server;
         client->fd = fd;
 
         // Create a thread for each client
@@ -138,14 +143,24 @@ int main(int argc, char **argv) {
         }
     }
 
+    stop_server(0);
+}
+
+void stop_server(int dummy) {
+    signal(SIGINT, stop_server);
+
     // Free shared info struct
     JRB tmp;
     jrb_traverse(tmp, server->chat_rooms) {
         Room* room = (Room*)tmp->val.v;
+        pthread_detach(room->tid);
         free_room(room);
     }
 
     jrb_free_tree(server->chat_rooms);
+    free(server);
+
+    exit(0);
 }
 
 void* room_thread(void *arg) {
@@ -174,6 +189,8 @@ void* room_thread(void *arg) {
             }
         }
 
+        dll_traverse(tmp2, room->messages)
+            free(tmp2->val.s);
         free_dllist(room->messages);
     }
 
@@ -207,7 +224,7 @@ void* client_thread(void *arg) {
     // Print the room names and their lists of clients
     fprintf(client->fout, "Chat Rooms:\n\n");
 
-    jrb_traverse(jtmp, client->server->chat_rooms) {
+    jrb_traverse(jtmp, server->chat_rooms) {
         Room* room = (Room*)jtmp->val.v;
 
         sprintf(buf, "%s:", room->name);
@@ -288,7 +305,7 @@ void* client_thread(void *arg) {
 Room* client_join_room(Client* client, char* room_name) {
     JRB tmp;
 
-    jrb_traverse(tmp, client->server->chat_rooms) {
+    jrb_traverse(tmp, server->chat_rooms) {
         Room* room = (Room*)tmp->val.v;
 
         // Loop through the list of rooms until we find the given name
@@ -338,6 +355,8 @@ void free_room(Room* room) {
         
     // Free name and list
     free(room->name);
+    free(room->lock);
+    free(room->input_block);
     free_dllist(room->messages);
     free_dllist(room->clients);
     free(room);
