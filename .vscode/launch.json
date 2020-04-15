@@ -10,7 +10,7 @@
             "request": "launch",
             "preLaunchTask": "make",
             "program": "${workspaceFolder}/laba/chat_server",
-            "args": ["hydra17.eecs.utk.edu", "65000", "Football", "Politics"],
+            "args": ["65002", "Bridge", "Baseball", "Politics", "Video-Games", "Art", "Music", "Movies", "Food", "Woodworking", "American-Idol"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/laba",
             "environment": [],

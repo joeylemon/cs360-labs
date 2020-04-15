@@ -17,4 +17,4 @@ chat_server: chat_server.o
 #make clean will rid your directory of the executable,
 #object files, and any core dumps you've caused
 clean:
-	rm -rf core $(EXECUTABLES) *.o tmp*.txt
+	rm -rf core $(EXECUTABLES) *.o tmp*.txt output-*.txt
