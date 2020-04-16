@@ -34,10 +34,10 @@ typedef struct client {
     Room* chat_room;
     pthread_t tid;
 
+    int fd;
     FILE* fin;
     FILE* fout;
     char name[100];
-    int fd;
 } Client;
 
 Server* server;
