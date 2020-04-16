@@ -27,7 +27,7 @@ typedef struct room {
 
     pthread_t tid;
     pthread_mutex_t *lock;
-    pthread_cond_t *input_block;
+    pthread_cond_t *new_message;
 } Room;
 
 typedef struct client {
@@ -87,16 +87,12 @@ void free_client(Client* client);
  */
 void free_room(Room* room);
 
-void stop_server(int dummy);
-
 int main(int argc, char **argv) {
     // Command line checking
     if (argc < 3) {
         fprintf(stderr, "usage: %s port Chat-Room-Names ...\n", argv[0]);
         exit(1);
     }
-
-    signal(SIGINT, stop_server);
 
     // Set up a shared info struct
     server = (Server*) malloc(sizeof(Server));
@@ -111,9 +107,9 @@ int main(int argc, char **argv) {
 
         // Initialize all mutexes and conditions
         room->lock = (pthread_mutex_t *) malloc(sizeof(pthread_mutex_t));
-        room->input_block = (pthread_cond_t *) malloc(sizeof(pthread_cond_t));
+        room->new_message = (pthread_cond_t *) malloc(sizeof(pthread_cond_t));
         pthread_mutex_init(room->lock, NULL);
-        pthread_cond_init(room->input_block, NULL);
+        pthread_cond_init(room->new_message, NULL);
 
         // Add the room to the shared info struct
         jrb_insert_str(server->chat_rooms, room->name, new_jval_v((void*)room));
@@ -126,8 +122,16 @@ int main(int argc, char **argv) {
     }
 
     int port = atoi(argv[1]);
+    char hostname[100];
+    gethostname(hostname, 100);
 
+    // Print server information
     printf("Listening on port :%d\n", port);
+    printf("Connect with:\n");
+    printf("  \e[36mnc %s %d\e[0m\n", hostname, port);
+    printf("Grade with:\n");
+    printf("  \e[36m~jplank/cs360/labs/laba/gradeall %s %d\e[0m\n", hostname, port);
+
     int socket = serve_socket(port);
 
     // Wait for clients to join the server
@@ -143,13 +147,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    stop_server(0);
-}
-
-void stop_server(int dummy) {
-    signal(SIGINT, stop_server);
-
-    // Free shared info struct
     JRB tmp;
     jrb_traverse(tmp, server->chat_rooms) {
         Room* room = (Room*)tmp->val.v;
@@ -160,18 +157,20 @@ void stop_server(int dummy) {
     jrb_free_tree(server->chat_rooms);
     free(server);
 
-    exit(0);
+    return 0;
 }
 
 void* room_thread(void *arg) {
     Room* room = arg;
 
-    pthread_mutex_lock(room->lock);
     while (1) {
         room->messages = new_dllist();
 
-        // Wait for the condition signal from a client
-        pthread_cond_wait(room->input_block, room->lock);
+        pthread_mutex_lock(room->lock);
+
+        // Wait for a new message from a client
+        while (dll_empty(room->messages))
+            pthread_cond_wait(room->new_message, room->lock);
 
         Dllist tmp1, tmp2;
 
@@ -192,6 +191,8 @@ void* room_thread(void *arg) {
         dll_traverse(tmp2, room->messages)
             free(tmp2->val.s);
         free_dllist(room->messages);
+
+        pthread_mutex_unlock(room->lock);
     }
 
     // Thread has finished, free memory
@@ -229,12 +230,16 @@ void* client_thread(void *arg) {
 
         sprintf(buf, "%s:", room->name);
 
+        pthread_mutex_lock(room->lock);
+
         // Loop through all clients in the room and build a list
         dll_traverse(dtmp, room->clients) {
             Client* c = (Client*)dtmp->val.v;
             strcat(buf, " ");
             strcat(buf, c->name);
         }
+
+        pthread_mutex_unlock(room->lock);
 
         strcat(buf, "\n");
         fprintf(client->fout, buf);
@@ -281,9 +286,10 @@ void* client_thread(void *arg) {
         client_send_message(client, buf);
     }
 
-    // Since the infinite loop ended, the user has quit
-    // Remove the user from the list of clients
+    // Since the loop ended, the user has quit
     pthread_mutex_lock(client->chat_room->lock);
+
+    // Remove the user from the list of clients
     dll_traverse(dtmp, client->chat_room->clients) {
         Client* c = (Client*)dtmp->val.v;
         if (strcmp(client->name, c->name) == 0) {
@@ -291,11 +297,14 @@ void* client_thread(void *arg) {
             break;
         }
     }
-    pthread_mutex_unlock(client->chat_room->lock);
 
     // Send a leave message to all clients
     sprintf(buf, "%s has left\n", client->name);
-    client_send_message(client, buf);
+    dll_append(client->chat_room->messages, new_jval_s(strdup(buf)));
+
+    pthread_cond_signal(client->chat_room->new_message);
+    pthread_mutex_unlock(client->chat_room->lock);
+
 
     free_client(client);
 
@@ -311,7 +320,10 @@ Room* client_join_room(Client* client, char* room_name) {
         // Loop through the list of rooms until we find the given name
         if (strcmp(room->name, room_name) == 0) {
             pthread_mutex_lock(room->lock);
+
+            // Add the client to the room's list of clients
             dll_append(room->clients, new_jval_v((void*)client));
+
             pthread_mutex_unlock(room->lock);
             return room;
         }
@@ -326,7 +338,9 @@ void client_send_message(Client* client, char* msg) {
     // Add the message to the list
     dll_append(client->chat_room->messages, new_jval_s(strdup(msg)));
 
-    pthread_cond_signal(client->chat_room->input_block);
+    // Signal to the room that there is a new message
+    pthread_cond_signal(client->chat_room->new_message);
+
     pthread_mutex_unlock(client->chat_room->lock);
 }
 
@@ -356,7 +370,7 @@ void free_room(Room* room) {
     // Free name and list
     free(room->name);
     free(room->lock);
-    free(room->input_block);
+    free(room->new_message);
     free_dllist(room->messages);
     free_dllist(room->clients);
     free(room);
