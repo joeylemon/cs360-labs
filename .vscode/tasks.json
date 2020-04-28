@@ -3,7 +3,7 @@
     "tasks": [
         {
             "label": "make",
-            "command": "cd ~/cs360/laba && make",
+            "command": "cd ~/cs360/final/3 && make",
             "args": [],
             "type": "shell"
         }

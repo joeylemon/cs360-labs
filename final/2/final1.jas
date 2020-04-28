@@ -1,0 +1,32 @@
+a:
+    ld [fp+12] -> %r0       / get p's value
+    ld [fp+16] -> %r1       / get b's value
+    ld [r1] -> %r1          / dereference b
+
+    mov #4 -> %r2
+    mul %r1, %r2 -> %r1      / *b times the size of int (4)
+
+    add %r0, %r1 -> %r0     / get (p + *b)
+    ld [r0] -> %r0          / dereference (p + *b)
+    ret
+
+main:
+    push #16
+
+    mov #10 -> %r0          / store array values
+    st %r0 -> [fp-12]
+    mov #11 -> %r0
+    st %r0 -> [fp-8]
+    mov #12 -> %r0
+    st %r0 -> [fp-4]
+
+    mov #2 -> %r0           / put b argument on stack (1)
+    st %r0 -> [fp]
+    st %fp -> [sp]--
+
+    mov #-12 -> %r0         / put array on stack
+    add %fp, %r0 -> %r0
+    st %r0 -> [sp]--
+    jsr a                   / should put %r0 = 12
+
+    ret

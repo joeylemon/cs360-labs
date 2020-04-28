@@ -1,0 +1,5 @@
+A. You can perform "ls -t {file1,file2}" to print the files sorted by their last modification time.
+B. You can call kill() on the process's pid to send a signal for the process to terminate.
+C. When a forked child exits, it becomes a zombie until the parent process performs a wait() for it or the parent process dies.
+D. Our machines spill r0 and r1 for us, meaning the values are automatically saved. This ensures we can use r0 without saving it.
+E. You could use system calls such as open(), read(), and write() to open the old filename and new filename, read all bytes from the old file, and write them to the new file. You could then call unlink() on the old filename to delete it.

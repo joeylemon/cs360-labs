@@ -1,0 +1,46 @@
+/ void c() {
+/    int d;
+/    d = e(4 + f(5, 6));
+/ }
+
+/ add args together
+f:
+    ld [fp+12] -> %r0       / get arg1
+    ld [fp+16] -> %r1       / get arg2
+
+    add %r0, %r1 -> %r0
+    ret
+
+/ add 5 to arg
+e:
+    ld [fp+12] -> %r0       / get arg1
+
+    mov #5 -> %r1
+    add %r0, %r1 -> %r0
+    ret
+
+c:
+    push #4             / allocate d (located at [fp])
+
+    mov #6 -> %r0       / allocate arg2 for f
+    st %r0 -> [sp]--
+
+    mov #5 -> %r0       / allocate arg1 for f
+    st %r0 -> [sp]--
+
+    jsr f               / call f
+    pop #8              / pop f's args
+
+    mov #4 -> %r1       / add 4 to f's result
+    add %r0, %r1 -> %r0
+
+    st %r0 -> [sp]--    / allocate arg1 for e
+    jsr e               / call e
+    pop #4              / pop e's args
+
+    st %r0 -> [fp]      / store the result into d
+    ret
+
+main:
+    jsr c
+    ret

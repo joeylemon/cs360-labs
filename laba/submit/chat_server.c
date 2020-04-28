@@ -87,6 +87,11 @@ void free_client(Client* client);
  */
 void free_room(Room* room);
 
+/**
+ * Free all malloc'd memory when the server stops
+ */
+void stop_server(int dummy);
+
 int main(int argc, char **argv) {
     // Command line checking
     if (argc < 3) {
@@ -132,9 +137,11 @@ int main(int argc, char **argv) {
     printf("Grade with:\n");
     printf("  \e[36m~jplank/cs360/labs/laba/gradeall %s %d\e[0m\n", hostname, port);
 
-    int socket = serve_socket(port);
+    // Listen for interruption signal so we can gracefully stop the server
+    signal(SIGINT, stop_server);
 
     // Wait for clients to join the server
+    int socket = serve_socket(port);
     while (1) {
         int fd = accept_connection(socket);
         Client* client = (Client*) malloc(sizeof(Client));
@@ -147,6 +154,14 @@ int main(int argc, char **argv) {
         }
     }
 
+    stop_server(0);
+
+    return 0;
+}
+
+void stop_server(int dummy) {
+    signal(SIGINT, stop_server);
+
     JRB tmp;
     jrb_traverse(tmp, server->chat_rooms) {
         Room* room = (Room*)tmp->val.v;
@@ -157,7 +172,7 @@ int main(int argc, char **argv) {
     jrb_free_tree(server->chat_rooms);
     free(server);
 
-    return 0;
+    exit(0);
 }
 
 void* room_thread(void *arg) {
